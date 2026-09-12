@@ -280,7 +280,7 @@ export function calculateDatingPool(prefs: UserPreferences): CalculationResult {
       label: `Gender: ${capitalize(prefs.interestedInSex)}`,
       poolBefore: totalAdultPop,
       poolAfter: Math.round(poolAfterSex / AGE_GROUPS.length), // average across age groups
-      percentKept: prefs.interestedInSex === 'any' ? 100 : getAvgSexProportion(selectedCities, prefs.interestedInSex) * 100,
+      percentKept: getAvgSexProportion(selectedCities, prefs.interestedInSex) * 100,
     });
   }
 
