@@ -20,7 +20,7 @@
 //     known socioeconomic patterns in ABS SEIFA and related data
 // =============================================================================
 
-import { AgeGroup } from './types';
+import { AgeGroup } from '../types';
 
 // ---------------------------------------------------------------------------
 // 1. POPULATION BY CITY (Adults 18+, 2021 Census ERP)
