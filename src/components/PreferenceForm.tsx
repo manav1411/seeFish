@@ -1,76 +1,79 @@
 'use client';
 
-import { useState } from 'react';
-import { CITIES, ETHNICITIES, INCOME_BRACKETS, UserPreferences } from '@/lib/types';
+import { ETHNICITIES, UserPreferences } from '@/lib/types';
+import DualSlider from './DualSlider';
+import CityMap from './CityMap';
 
 interface PreferenceFormProps {
-  onSubmit: (prefs: UserPreferences) => void;
-  isLoading: boolean;
+  prefs: UserPreferences;
+  onChange: (prefs: UserPreferences) => void;
 }
 
-/**
- * Convert cm to ft'in" display string.
- */
-function cmToFtIn(cm: number): string {
+function cmToDisplay(cm: number): string {
   const totalInches = cm / 2.54;
   const feet = Math.floor(totalInches / 12);
   const inches = Math.round(totalInches % 12);
   return `${feet}'${inches}"`;
 }
 
-export default function PreferenceForm({ onSubmit, isLoading }: PreferenceFormProps) {
-  const [interestedInSex, setInterestedInSex] = useState<'male' | 'female' | 'any'>('any');
-  const [ageMin, setAgeMin] = useState(22);
-  const [ageMax, setAgeMax] = useState(35);
-  const [heightMin, setHeightMin] = useState(150);
-  const [heightMax, setHeightMax] = useState(200);
-  const [minIncome, setMinIncome] = useState('any');
-  const [selectedEthnicities, setSelectedEthnicities] = useState<string[]>([]);
-  const [city, setCity] = useState('any');
-  const [singleOnly, setSingleOnly] = useState(true);
+function formatIncome(v: number): string {
+  if (v >= 250000) return '$250k+';
+  if (v >= 1000) return `$${Math.round(v / 1000)}k`;
+  return `$${v}`;
+}
+
+function bell(length: number, peak: number, spread: number): number[] {
+  return Array.from({ length }, (_, i) =>
+    Math.exp(-0.5 * Math.pow((i - peak) / spread, 2))
+  );
+}
+
+const INCOME_DIST = [
+  10, 16, 28, 44, 72, 92, 100, 94, 84, 72,
+  62, 52, 42, 36, 30, 24, 20, 16, 13, 10,
+   8,  7,  6,  5,  4,  3,  3,  2,  2,  1,
+   1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
+].map(v => v / 100);
+
+export default function PreferenceForm({ prefs, onChange }: PreferenceFormProps) {
+  const set = <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) =>
+    onChange({ ...prefs, [key]: value });
 
   const toggleEthnicity = (id: string) => {
-    setSelectedEthnicities((prev) =>
-      prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]
-    );
+    const next = prefs.ethnicities.includes(id)
+      ? prefs.ethnicities.filter(e => e !== id)
+      : [...prefs.ethnicities, id];
+    set('ethnicities', next);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit({
-      interestedInSex,
-      ageMin,
-      ageMax,
-      heightMin,
-      heightMax,
-      minIncome,
-      ethnicities: selectedEthnicities,
-      city,
-      singleOnly,
-    });
-  };
+  const isFemale = prefs.interestedInSex === 'female';
+  // Age range 18–75 = 58 values; bell peaks near 25–30
+  const ageDist = bell(58, isFemale ? 8 : 11, 12);
+  // Height range 140–220 = 81 values
+  const heightDist = bell(81, isFemale ? 21 : 35, 8);
+
+  const genderOptions = [
+    { value: 'female' as const, label: 'Women' },
+    { value: 'male' as const, label: 'Men' },
+  ];
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-8">
-      {/* Gender Interest */}
+    <div className="flex flex-col gap-4">
+      {/* ── Gender interest ────────────────────────────────── */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-3">
-          I&apos;m interested in
-        </label>
-        <div className="flex gap-3">
-          {[
-            { value: 'female' as const, label: '👩 Women', emoji: '' },
-            { value: 'male' as const, label: '👨 Men', emoji: '' },
-            { value: 'any' as const, label: '👥 Everyone', emoji: '' },
-          ].map(({ value, label }) => (
+        <span className="text-xs font-medium text-gray-400 uppercase tracking-widest block mb-2">
+          Interested in
+        </span>
+        <div className="flex gap-2">
+          {genderOptions.map(({ value, label }) => (
             <button
               key={value}
               type="button"
-              onClick={() => setInterestedInSex(value)}
-              className={`flex-1 py-3 px-4 rounded-xl text-sm font-medium transition-all duration-200 ${
-                interestedInSex === value
-                  ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25 scale-[1.02]'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:border-primary-300 hover:bg-primary-50'
+              onClick={() => set('interestedInSex', value)}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-all duration-200 ${
+                prefs.interestedInSex === value
+                  ? 'bg-black text-white border-black'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
               }`}
             >
               {label}
@@ -79,198 +82,96 @@ export default function PreferenceForm({ onSubmit, isLoading }: PreferenceFormPr
         </div>
       </div>
 
-      {/* Age Range */}
-      <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-3">
-          Age range
-        </label>
-        <div className="flex items-center gap-3">
-          <div className="flex-1">
-            <input
-              type="number"
-              min={18}
-              max={100}
-              value={ageMin}
-              onChange={(e) => {
-                const v = parseInt(e.target.value) || 18;
-                setAgeMin(Math.min(v, ageMax));
-              }}
-              className="w-full text-center font-medium"
-            />
-            <p className="text-xs text-gray-400 text-center mt-1">Min</p>
-          </div>
-          <span className="text-gray-400 font-medium mt-[-16px]">to</span>
-          <div className="flex-1">
-            <input
-              type="number"
-              min={18}
-              max={100}
-              value={ageMax}
-              onChange={(e) => {
-                const v = parseInt(e.target.value) || 100;
-                setAgeMax(Math.max(v, ageMin));
-              }}
-              className="w-full text-center font-medium"
-            />
-            <p className="text-xs text-gray-400 text-center mt-1">Max</p>
-          </div>
+      {/* ── Row 1: Age (left) + Location map (right) ──────── */}
+      <div className="grid grid-cols-2 gap-x-6">
+        <div className="flex flex-col justify-center h-full">
+          <DualSlider
+            label="Age"
+            min={18}
+            max={75}
+            value={[prefs.ageMin, prefs.ageMax]}
+            onChange={([min, max]) => onChange({ ...prefs, ageMin: min, ageMax: max })}
+            formatValue={v => `${v}`}
+            distribution={ageDist}
+          />
         </div>
+        <CityMap
+          selectedCity={prefs.city}
+          onSelectCity={city => set('city', city)}
+        />
       </div>
 
-      {/* City */}
-      <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-3">
-          City
-        </label>
-        <select
-          value={city}
-          onChange={(e) => setCity(e.target.value)}
-          className="w-full"
-        >
-          <option value="any">🇦🇺 Anywhere in Australia</option>
-          {CITIES.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+      {/* ── Row 2: Height (left) + Income (right) ─────────── */}
+      <div className="grid grid-cols-2 gap-x-6">
+        <DualSlider
+          label="Height"
+          min={140}
+          max={220}
+          value={[prefs.heightMin, prefs.heightMax]}
+          onChange={([min, max]) => onChange({ ...prefs, heightMin: min, heightMax: max })}
+          formatValue={cmToDisplay}
+          distribution={heightDist}
+        />
+        <DualSlider
+          label="Income"
+          min={0}
+          max={250000}
+          value={[prefs.incomeMin, prefs.incomeMax]}
+          onChange={([min, max]) => onChange({ ...prefs, incomeMin: min, incomeMax: max })}
+          formatValue={formatIncome}
+          distribution={INCOME_DIST}
+        />
       </div>
 
-      {/* Ethnicity */}
+      {/* ── Ethnicity (full width) ─────────────────────────── */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-3">
+        <span className="text-xs font-medium text-gray-400 uppercase tracking-widest block mb-2">
           Ethnicity preference
-          <span className="font-normal text-gray-400 ml-2">
-            (leave unchecked for any)
-          </span>
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          {ETHNICITIES.map((eth) => (
-            <label
+          <span className="normal-case font-normal text-gray-300 ml-1.5">(any if none selected)</span>
+        </span>
+        <div className="flex flex-wrap gap-1.5">
+          {ETHNICITIES.map(eth => (
+            <button
               key={eth.id}
-              className={`flex items-center gap-2.5 p-2.5 rounded-lg cursor-pointer transition-all duration-150 ${
-                selectedEthnicities.includes(eth.id)
-                  ? 'bg-primary-50 border border-primary-200'
-                  : 'bg-white border border-gray-100 hover:border-gray-200'
+              type="button"
+              onClick={() => toggleEthnicity(eth.id)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${
+                prefs.ethnicities.includes(eth.id)
+                  ? 'bg-black text-white border-black'
+                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
               }`}
             >
-              <input
-                type="checkbox"
-                checked={selectedEthnicities.includes(eth.id)}
-                onChange={() => toggleEthnicity(eth.id)}
-                className="rounded"
-              />
-              <span className="text-sm text-gray-700">{eth.name}</span>
-            </label>
+              {eth.name}
+            </button>
           ))}
         </div>
       </div>
 
-      {/* Height Range */}
-      <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-3">
-          Height range
-        </label>
-        <div className="flex items-center gap-3">
-          <div className="flex-1">
-            <input
-              type="number"
-              min={100}
-              max={250}
-              value={heightMin}
-              onChange={(e) => {
-                const v = parseInt(e.target.value) || 100;
-                setHeightMin(Math.min(v, heightMax));
-              }}
-              className="w-full text-center font-medium"
-            />
-            <p className="text-xs text-gray-400 text-center mt-1">
-              Min ({cmToFtIn(heightMin)})
-            </p>
-          </div>
-          <span className="text-gray-400 font-medium mt-[-16px]">to</span>
-          <div className="flex-1">
-            <input
-              type="number"
-              min={100}
-              max={250}
-              value={heightMax}
-              onChange={(e) => {
-                const v = parseInt(e.target.value) || 250;
-                setHeightMax(Math.max(v, heightMin));
-              }}
-              className="w-full text-center font-medium"
-            />
-            <p className="text-xs text-gray-400 text-center mt-1">
-              Max ({cmToFtIn(heightMax)})
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Income */}
-      <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-3">
-          Minimum yearly income
-        </label>
-        <select
-          value={minIncome}
-          onChange={(e) => setMinIncome(e.target.value)}
-          className="w-full"
-        >
-          {INCOME_BRACKETS.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Single Only */}
-      <div>
-        <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg bg-white border border-gray-100 hover:border-gray-200 transition-colors">
-          <input
-            type="checkbox"
-            checked={singleOnly}
-            onChange={(e) => setSingleOnly(e.target.checked)}
-            className="rounded"
-          />
-          <div>
-            <span className="text-sm font-medium text-gray-700">Single people only</span>
-            <p className="text-xs text-gray-400">Exclude those in registered or de facto relationships</p>
-          </div>
-        </label>
-      </div>
-
-      {/* Submit */}
-      <button
-        type="submit"
-        disabled={isLoading}
-        className={`w-full py-4 px-6 rounded-xl text-white font-semibold text-lg
-          transition-all duration-200 shadow-lg
-          ${
-            isLoading
-              ? 'bg-gray-400 cursor-not-allowed shadow-none'
-              : 'bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 shadow-primary-500/25 hover:shadow-primary-500/40 hover:scale-[1.01] active:scale-[0.99]'
+      {/* ── Single only — just the toggle + label inline ───── */}
+      <div className="flex items-center gap-3">
+        {/* The toggle IS the clickable button */}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={prefs.singleOnly}
+          onClick={() => set('singleOnly', !prefs.singleOnly)}
+          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 transition-colors duration-200 focus:outline-none ${
+            prefs.singleOnly ? 'bg-black border-black' : 'bg-gray-200 border-gray-200'
           }`}
-      >
-        {isLoading ? (
-          <span className="flex items-center justify-center gap-2">
-            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            Crunching the numbers...
-          </span>
-        ) : (
-          '💘 See My Dating Pool'
-        )}
-      </button>
-
-      <p className="text-xs text-gray-400 text-center">
-        Based on ABS Census 2021 data and statistical estimates.
-        Your preferences are stored anonymously for aggregate research.
-      </p>
-    </form>
+        >
+          <span
+            className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform duration-200 ${
+              prefs.singleOnly ? 'translate-x-4' : 'translate-x-0.5'
+            }`}
+          />
+        </button>
+        <span
+          className="text-sm text-gray-600 cursor-pointer select-none"
+          onClick={() => set('singleOnly', !prefs.singleOnly)}
+        >
+          Single people only
+        </span>
+      </div>
+    </div>
   );
 }

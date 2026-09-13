@@ -1,173 +1,193 @@
 'use client';
 
-import { CalculationResult } from '@/lib/types';
+import { useState, useEffect, useRef } from 'react';
+import { CalculationResult, UserPreferences } from '@/lib/types';
 
 interface ResultsProps {
   result: CalculationResult;
+  userPrefs: UserPreferences;
+  onCheckAmITheirType: () => void;
 }
 
-/**
- * Format a large number with commas: 1234567 → "1,234,567"
- */
 function formatNumber(n: number): string {
   return n.toLocaleString('en-AU');
 }
 
-/**
- * Determine the color for a percentage bar based on how much was kept.
- */
-function barColor(pct: number): string {
-  if (pct >= 80) return 'bg-green-400';
-  if (pct >= 50) return 'bg-emerald-400';
-  if (pct >= 30) return 'bg-yellow-400';
-  if (pct >= 10) return 'bg-orange-400';
-  return 'bg-red-400';
+function useCountUp(target: number, duration = 800): number {
+  const [count, setCount] = useState(0);
+  const startRef = useRef<number | null>(null);
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    startRef.current = null;
+    const step = (ts: number) => {
+      if (!startRef.current) startRef.current = ts;
+      const progress = Math.min((ts - startRef.current) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(Math.round(target * eased));
+      if (progress < 1) rafRef.current = requestAnimationFrame(step);
+    };
+    rafRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [target, duration]);
+
+  return count;
 }
 
-/**
- * Get a fun emoji reaction based on the pool size.
- */
-function getReaction(matchPop: number, percentage: number): { emoji: string; text: string } {
-  if (matchPop === 0) return { emoji: '😱', text: 'Nobody matches... time to reconsider?' };
-  if (percentage > 10) return { emoji: '🎉', text: 'Plenty of fish in the sea!' };
-  if (percentage > 5) return { emoji: '😊', text: 'Solid dating pool!' };
-  if (percentage > 1) return { emoji: '👍', text: 'A healthy pool to work with.' };
-  if (percentage > 0.1) return { emoji: '🤔', text: 'Selective, but realistic.' };
-  if (percentage > 0.01) return { emoji: '😅', text: 'Quite the high standards!' };
-  if (matchPop > 100) return { emoji: '🎯', text: 'Very selective — they\'re out there though!' };
-  return { emoji: '🦄', text: 'Unicorn hunting!' };
-}
+/** A single row in the waterfall, showing how this filter narrows the bar from the PREVIOUS filter's width */
+function WaterfallRow({
+  label,
+  percentKept,   // % of THIS filter's input that survives
+  poolAfter,
+  index,
+  prevWidth,     // CSS % width of the previous bar (to show linkage)
+}: {
+  label: string;
+  percentKept: number;
+  poolAfter: number;
+  index: number;
+  prevWidth: number;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 80 + index * 70);
+    return () => clearTimeout(t);
+  }, [index]);
 
-export default function Results({ result }: ResultsProps) {
-  const { matchingPopulation, totalAdultPopulation, percentage, breakdown, insights, funFacts } = result;
-  const reaction = getReaction(matchingPopulation, percentage);
+  // This bar's width = prev width * (percentKept / 100)
+  // We render it relative to 100% of the container, so:
+  const thisWidth = prevWidth * (Math.max(0.5, Math.min(100, percentKept)) / 100);
+  const narrowedBy = prevWidth - thisWidth; // how much this filter cut
 
   return (
-    <div className="space-y-8 animate-fade-in-up">
-      {/* Hero Result */}
-      <div className="text-center py-8">
-        <p className="text-5xl mb-4 animate-count-up">{reaction.emoji}</p>
-        <h2 className="text-lg font-medium text-gray-500 mb-2">Your Dating Pool</h2>
-        <p className="text-5xl sm:text-6xl font-extrabold text-gray-900 tracking-tight animate-count-up">
-          {formatNumber(matchingPopulation)}
-        </p>
-        <p className="text-lg text-gray-500 mt-2">
-          people in Australia match your criteria
-        </p>
-        <div className="mt-4 flex items-center justify-center gap-4 text-sm text-gray-400">
-          <span>
-            <strong className="text-gray-600">{percentage.toFixed(3)}%</strong> of
-            {' '}{formatNumber(totalAdultPopulation)} adults
-          </span>
-        </div>
-        <p className="mt-3 text-sm font-medium text-gray-500 italic">
-          {reaction.text}
-        </p>
+    <div
+      style={{
+        opacity: 0,
+        animation: `fadeUp 0.35s ease both`,
+        animationDelay: `${index * 0.07}s`,
+        animationFillMode: 'both',
+      }}
+    >
+      <div className="flex items-baseline justify-between mb-1">
+        <span className="text-xs text-gray-500 truncate pr-2">{label}</span>
+        <span className="text-xs font-semibold text-black tabular-nums shrink-0">
+          {formatNumber(Math.round(poolAfter))}
+        </span>
       </div>
 
-      {/* Overall percentage bar */}
-      <div className="px-2">
-        <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+      {/* Track */}
+      <div className="relative h-[3px] w-full bg-gray-100 rounded-full overflow-hidden">
+        {/* Dim "what was removed" portion — from thisWidth to prevWidth */}
+        {mounted && narrowedBy > 0.5 && (
           <div
-            className="h-full bg-gradient-to-r from-primary-400 to-primary-600 rounded-full transition-all duration-1000 ease-out"
-            style={{ width: `${Math.max(0.5, Math.min(100, percentage))}%` }}
+            className="absolute top-0 h-full rounded-full bg-gray-200"
+            style={{
+              left: 0,
+              width: `${prevWidth}%`,
+              transition: 'width 0.55s cubic-bezier(0.4,0,0.2,1)',
+              transitionDelay: `${index * 0.07}s`,
+            }}
           />
-        </div>
-        <div className="flex justify-between text-xs text-gray-400 mt-1">
-          <span>0%</span>
-          <span>of Australia&apos;s adult population</span>
-          <span>100%</span>
-        </div>
+        )}
+        {/* Active portion */}
+        <div
+          className="absolute top-0 h-full rounded-full bg-black"
+          style={{
+            left: 0,
+            width: mounted ? `${thisWidth}%` : '0%',
+            transition: 'width 0.55s cubic-bezier(0.4,0,0.2,1)',
+            transitionDelay: `${index * 0.07 + 0.05}s`,
+          }}
+        />
       </div>
+    </div>
+  );
+}
 
-      {/* Filter Breakdown Waterfall */}
-      {breakdown.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4">
-            How each filter narrows your pool
-          </h3>
-          <div className="space-y-4">
-            {breakdown.map((item, i) => (
-              <div
-                key={item.filterName}
-                className={`animate-fade-in-up stagger-${i + 1}`}
-                style={{ opacity: 0, animationFillMode: 'forwards' }}
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-sm font-medium text-gray-700">
-                    {item.label}
-                  </span>
-                  <span className="text-sm text-gray-500">
-                    {formatNumber(Math.round(item.poolAfter))} left
-                    <span className="text-xs text-gray-400 ml-1">
-                      ({item.percentKept.toFixed(1)}% kept)
-                    </span>
-                  </span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full animate-grow ${barColor(item.percentKept)}`}
-                    style={{ width: `${Math.max(0.5, item.percentKept)}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+export default function Results({ result, userPrefs, onCheckAmITheirType }: ResultsProps) {
+  const { matchingPopulation, totalAdultPopulation, percentage, breakdown, insights } = result;
+  const animatedCount = useCountUp(matchingPopulation);
 
-      {/* Insights */}
-      {insights.length > 0 && (
-        <div className="bg-gradient-to-br from-primary-50 to-pink-50 rounded-2xl border border-primary-100 p-6">
-          <h3 className="text-sm font-semibold text-primary-700 mb-3">
-            💡 Personalised Insights
-          </h3>
-          <ul className="space-y-2.5">
-            {insights.map((insight, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                <span className="text-primary-400 mt-0.5 flex-shrink-0">•</span>
-                <span>{insight}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+  // Build cumulative widths for waterfall bars
+  // First bar starts at 100% (total population), then each subsequent bar
+  // is prev * (percentKept/100)
+  const cumulativeWidths: number[] = [];
+  let running = 100;
+  for (const item of breakdown) {
+    cumulativeWidths.push(running);
+    running = running * (Math.max(0.5, Math.min(100, item.percentKept)) / 100);
+  }
 
-      {/* Fun Facts */}
-      {funFacts.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">
-            🎲 Fun Facts
-          </h3>
-          <div className="space-y-2.5">
-            {funFacts.map((fact, i) => (
-              <p key={i} className="text-sm text-gray-600">
-                {fact}
-              </p>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Coming Soon Teaser */}
-      <div className="bg-gray-50 rounded-2xl border border-dashed border-gray-200 p-6 text-center">
-        <p className="text-2xl mb-2">🔮</p>
-        <h3 className="text-sm font-semibold text-gray-600 mb-1">
-          Coming Soon: &quot;Am I Their Type?&quot;
-        </h3>
-        <p className="text-xs text-gray-400 max-w-sm mx-auto">
-          Once enough people have shared their preferences, you&apos;ll be able to see
-          how many of your matches are also looking for someone like you.
+  return (
+    <div className="h-full flex flex-col gap-5 overflow-hidden">
+      {/* Hero number */}
+      <div className="text-center shrink-0">
+        <p className="text-[10px] font-medium text-gray-400 uppercase tracking-widest mb-1.5">
+          Your dating pool
+        </p>
+        <p
+          key={matchingPopulation}
+          className="text-5xl font-bold text-black tracking-tight tabular-nums"
+          style={{ animation: 'scaleIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both' }}
+        >
+          {formatNumber(animatedCount)}
+        </p>
+        <p className="text-xs text-gray-400 mt-1.5">
+          <span className="text-black font-semibold">{percentage.toFixed(2)}%</span>
+          {' '}of {formatNumber(totalAdultPopulation)} adults
         </p>
       </div>
 
-      {/* Data attribution */}
-      <p className="text-xs text-gray-400 text-center pb-4">
-        Data sourced from ABS Census 2021, ABS National Health Survey 2017-18,
-        and statistical estimates. Population figures are for adults aged 18+.
-        All calculations use conditional probability accounting for correlations
-        between demographics.
-      </p>
+      {/* Filter waterfall */}
+      {breakdown.length > 0 && (
+        <div className="flex-1 overflow-y-auto custom-scroll min-h-0">
+          <p className="text-[10px] font-medium text-gray-400 uppercase tracking-widest mb-2.5">
+            How filters narrow your pool
+          </p>
+          <div className="space-y-3">
+            {breakdown.map((item, i) => (
+              <WaterfallRow
+                key={item.filterName}
+                label={item.label}
+                percentKept={item.percentKept}
+                poolAfter={item.poolAfter}
+                index={i}
+                prevWidth={cumulativeWidths[i]}
+              />
+            ))}
+          </div>
+
+          {/* Insights */}
+          {insights.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-gray-100">
+              <p className="text-[10px] font-medium text-gray-400 uppercase tracking-widest mb-2">
+                Insights
+              </p>
+              <ul className="space-y-1.5">
+                {insights.map((insight, i) => (
+                  <li key={i} className="text-xs text-gray-500 flex gap-2">
+                    <span className="text-gray-300 shrink-0 mt-px">—</span>
+                    <span>{insight}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Segment 2 CTA */}
+      <div className="pt-3 border-t border-gray-100 shrink-0">
+        <p className="text-[10px] text-gray-400 mb-2">
+          Out of these {formatNumber(matchingPopulation)} people — how many would be interested in you?
+        </p>
+        <button
+          onClick={onCheckAmITheirType}
+          className="w-full py-2.5 rounded-lg bg-black text-white text-sm font-medium hover:bg-gray-800 active:scale-[0.99] transition-all duration-150"
+        >
+          Am I their type?
+        </button>
+      </div>
     </div>
   );
 }

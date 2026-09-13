@@ -82,8 +82,10 @@ export interface UserPreferences {
   heightMin: number;
   /** Maximum height in cm */
   heightMax: number;
-  /** Minimum income bracket ID */
-  minIncome: string;
+  /** Minimum income */
+  incomeMin: number;
+  /** Maximum income */
+  incomeMax: number;
   /** Selected ethnicity IDs (empty array = any) */
   ethnicities: string[];
   /** City ID ('any' for all of Australia) */

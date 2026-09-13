@@ -199,10 +199,39 @@ export function calculateDatingPool(prefs: UserPreferences): CalculationResult {
         const singleFilteredPop = ageFilteredPop * singleRate;
 
         // Income base rate for this sex × age
-        const incomeData = incomeAboveThreshold[prefs.minIncome];
-        const baseIncomeRate = incomeData
-          ? incomeData[ageGroup][sex]
-          : 1.0;
+        const getRate = (income: number) => {
+          if (income === 0) return 1.0;
+          const sortedBrackets = [
+            { min: 0, id: 'any' },
+            { min: 30000, id: '30k' },
+            { min: 50000, id: '50k' },
+            { min: 75000, id: '75k' },
+            { min: 100000, id: '100k' },
+            { min: 150000, id: '150k' },
+            { min: 200000, id: '200k' },
+          ];
+          let lower = sortedBrackets[0];
+          let upper = sortedBrackets[sortedBrackets.length - 1];
+          for (let i = 0; i < sortedBrackets.length - 1; i++) {
+            if (income >= sortedBrackets[i].min && income <= sortedBrackets[i + 1].min) {
+              lower = sortedBrackets[i];
+              upper = sortedBrackets[i + 1];
+              break;
+            }
+          }
+          if (income >= 200000) {
+            const r200 = incomeAboveThreshold['200k']?.[ageGroup]?.[sex] ?? 0;
+            return r200 * Math.exp(-(income - 200000) / 50000);
+          }
+          const rateLower = incomeAboveThreshold[lower.id]?.[ageGroup]?.[sex] ?? 1.0;
+          const rateUpper = incomeAboveThreshold[upper.id]?.[ageGroup]?.[sex] ?? 0.0;
+          const t = (income - lower.min) / (upper.min - lower.min);
+          return rateLower * (1 - t) + rateUpper * t;
+        };
+
+        const rateMin = getRate(prefs.incomeMin);
+        const rateMax = getRate(prefs.incomeMax);
+        const baseIncomeRate = Math.max(0, rateMin - rateMax);
 
         for (const ethId of selectedEthnicities) {
           const ethProportion = cityEthDist[ethId] || 0;
@@ -291,7 +320,7 @@ export function calculateDatingPool(prefs: UserPreferences): CalculationResult {
   const insights: string[] = [];
 
   // Income insight
-  if (prefs.minIncome !== 'any') {
+  if (prefs.incomeMin > 0 || prefs.incomeMax < 250000) {
     const poolIncreaseWithoutIncome = poolWithoutIncome > 0
       ? ((poolWithoutIncome / poolAfterHeight) - 1) * 100
       : 0;
@@ -341,64 +370,6 @@ export function calculateDatingPool(prefs: UserPreferences): CalculationResult {
 
   // --- Fun facts ---
   const funFacts: string[] = [];
-
-  if (matchingPop > 0) {
-    // Stadium comparison
-    const mcgCapacity = 100_024;
-    if (matchingPop >= mcgCapacity) {
-      funFacts.push(
-        `Your dating pool could fill the MCG ${(matchingPop / mcgCapacity).toFixed(1)} times! 🏟️`
-      );
-    } else {
-      funFacts.push(
-        `Your dating pool would fill ${Math.round((matchingPop / mcgCapacity) * 100)}% of the MCG. 🏟️`
-      );
-    }
-
-    // Odds comparison
-    if (percentage < 0.01) {
-      funFacts.push(
-        `Finding your match is rarer than a four-leaf clover (1 in ${Math.round(100 / percentage).toLocaleString()}).  🍀`
-      );
-    } else if (percentage < 0.1) {
-      funFacts.push(
-        `About 1 in every ${Math.round(100 / percentage).toLocaleString()} Australian adults fits your criteria. 🎯`
-      );
-    } else if (percentage < 1) {
-      funFacts.push(
-        `About 1 in every ${Math.round(100 / percentage)} Australian adults fits your criteria. 🎯`
-      );
-    }
-
-    // City comparison
-    if (matchingPop < 1000) {
-      funFacts.push(
-        `Your pool is about the size of a small outback town. 🏜️`
-      );
-    } else if (matchingPop < 10000) {
-      funFacts.push(
-        `Your pool is about the size of a large country town. 🌾`
-      );
-    } else if (matchingPop < 100000) {
-      funFacts.push(
-        `Your pool is about the size of a city like Ballarat or Cairns. 🏙️`
-      );
-    } else if (matchingPop < 500000) {
-      funFacts.push(
-        `Your pool is bigger than the population of Canberra! 🇦🇺`
-      );
-    }
-
-    // Random encounter probability
-    const randomEncounterProb = percentage / 100;
-    if (prefs.city !== 'any') {
-      const cityPop = populationByCity[prefs.city]?.total || totalAdultPop;
-      const encounterRate = matchingPop / cityPop;
-      funFacts.push(
-        `If you passed every adult in ${capitalize(prefs.city)} on the street, about ${Math.round(encounterRate * 1000)} in every 1,000 would match your criteria. 🚶`
-      );
-    }
-  }
 
   return {
     totalAdultPopulation: totalAdultPop,
@@ -467,7 +438,7 @@ function buildSequentialBreakdown(
   if (prefs.city !== 'any') {
     breakdown.push({
       filterName: 'city',
-      label: `📍 Location: ${capitalize(prefs.city)}`,
+      label: `Location: ${capitalize(prefs.city)}`,
       poolBefore: TOTAL_ADULT_POPULATION,
       poolAfter: totalAreaPop,
       percentKept: (totalAreaPop / TOTAL_ADULT_POPULATION) * 100,
@@ -481,7 +452,7 @@ function buildSequentialBreakdown(
     currentPool = Math.round(currentPool * sexProp);
     breakdown.push({
       filterName: 'sex',
-      label: `👤 Gender: ${prefs.interestedInSex === 'male' ? 'Men' : 'Women'}`,
+      label: `Gender: ${prefs.interestedInSex === 'male' ? 'Men' : 'Women'}`,
       poolBefore: prevPool,
       poolAfter: currentPool,
       percentKept: sexProp * 100,
@@ -503,7 +474,7 @@ function buildSequentialBreakdown(
     currentPool = Math.round(currentPool * ageProp);
     breakdown.push({
       filterName: 'age',
-      label: `🎂 Age: ${prefs.ageMin}–${prefs.ageMax}`,
+      label: `Age: ${prefs.ageMin}–${prefs.ageMax}`,
       poolBefore: prevPool,
       poolAfter: currentPool,
       percentKept: ageProp * 100,
@@ -517,7 +488,7 @@ function buildSequentialBreakdown(
     currentPool = Math.round(currentPool * avgSingleRate);
     breakdown.push({
       filterName: 'single',
-      label: '💍 Status: Single only',
+      label: 'Status: Single only',
       poolBefore: prevPool,
       poolAfter: currentPool,
       percentKept: avgSingleRate * 100,
@@ -548,7 +519,7 @@ function buildSequentialBreakdown(
       : `${selectedNames.length} groups`;
     breakdown.push({
       filterName: 'ethnicity',
-      label: `🌏 Ethnicity: ${label}`,
+      label: `Ethnicity: ${label}`,
       poolBefore: prevPool,
       poolAfter: currentPool,
       percentKept: ethProp * 100,
@@ -556,7 +527,7 @@ function buildSequentialBreakdown(
   }
 
   // 6. Income
-  if (prefs.minIncome !== 'any') {
+  if (prefs.incomeMin > 0 || prefs.incomeMax < 250000) {
     const prevPool = currentPool;
     // Calculate weighted income proportion
     let incomeProp = 0;
@@ -571,11 +542,46 @@ function buildSequentialBreakdown(
           const ageOverlap = ageOverlapFraction(ag, prefs.ageMin, prefs.ageMax);
           if (ageOverlap === 0) continue;
 
-          const baseRate = incomeAboveThreshold[prefs.minIncome]?.[ag]?.[sex] ?? 1.0;
+          // Interpolate base rate for incomeMin and incomeMax
+          const getRate = (income: number) => {
+            if (income === 0) return 1.0;
+            const sortedBrackets = [
+              { min: 0, id: 'any' },
+              { min: 30000, id: '30k' },
+              { min: 50000, id: '50k' },
+              { min: 75000, id: '75k' },
+              { min: 100000, id: '100k' },
+              { min: 150000, id: '150k' },
+              { min: 200000, id: '200k' },
+            ];
+            let lower = sortedBrackets[0];
+            let upper = sortedBrackets[sortedBrackets.length - 1];
+            for (let i = 0; i < sortedBrackets.length - 1; i++) {
+              if (income >= sortedBrackets[i].min && income <= sortedBrackets[i + 1].min) {
+                lower = sortedBrackets[i];
+                upper = sortedBrackets[i + 1];
+                break;
+              }
+            }
+            if (income >= 200000) {
+              const r200 = incomeAboveThreshold['200k']?.[ag]?.[sex] ?? 0;
+              // Fade out beyond 200k
+              return r200 * Math.exp(-(income - 200000) / 50000);
+            }
+            const rateLower = incomeAboveThreshold[lower.id]?.[ag]?.[sex] ?? 1.0;
+            const rateUpper = incomeAboveThreshold[upper.id]?.[ag]?.[sex] ?? 0.0;
+            const t = (income - lower.min) / (upper.min - lower.min);
+            return rateLower * (1 - t) + rateUpper * t;
+          };
+
+          const rateMin = getRate(prefs.incomeMin);
+          const rateMax = getRate(prefs.incomeMax);
+          const baseRate = Math.max(0, rateMin - rateMax);
 
           for (const ethId of selectedEthnicities) {
             const ethProp = cityEth[ethId] || 0;
             const ethIncomeMult = ethnicityIncomeMultiplier[ethId] || 1.0;
+            // The rate is affected by the multiplier (shift the brackets conceptually, or just multiply the rate)
             const adjustedRate = clamp01(baseRate * cityIncomeMult * ethIncomeMult);
 
             const weight = cityData.total *
@@ -592,9 +598,11 @@ function buildSequentialBreakdown(
     }
     const effectiveIncomeProp = totalWeight > 0 ? incomeProp / totalWeight : 1.0;
     currentPool = Math.round(currentPool * effectiveIncomeProp);
+    const incMinLabel = prefs.incomeMin === 0 ? 'Any' : `$${Math.round(prefs.incomeMin / 1000)}k`;
+    const incMaxLabel = prefs.incomeMax >= 250000 ? '$250k+' : `$${Math.round(prefs.incomeMax / 1000)}k`;
     breakdown.push({
       filterName: 'income',
-      label: `💰 Income: ${prefs.minIncome === '30k' ? '$30k+' : prefs.minIncome === '50k' ? '$50k+' : prefs.minIncome === '75k' ? '$75k+' : prefs.minIncome === '100k' ? '$100k+' : prefs.minIncome === '150k' ? '$150k+' : '$200k+'}`,
+      label: `Income: ${incMinLabel} – ${incMaxLabel}`,
       poolBefore: prevPool,
       poolAfter: currentPool,
       percentKept: effectiveIncomeProp * 100,
@@ -633,7 +641,7 @@ function buildSequentialBreakdown(
     const maxIn = Math.round((prefs.heightMax / 2.54) % 12);
     breakdown.push({
       filterName: 'height',
-      label: `📏 Height: ${prefs.heightMin}cm–${prefs.heightMax}cm (${minFt}'${minIn}"–${maxFt}'${maxIn}")`,
+      label: `Height: ${prefs.heightMin}cm–${prefs.heightMax}cm (${minFt}'${minIn}"–${maxFt}'${maxIn}")`,
       poolBefore: prevPool,
       poolAfter: currentPool,
       percentKept: effectiveHeightProp * 100,

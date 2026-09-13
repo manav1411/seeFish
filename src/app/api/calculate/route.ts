@@ -35,9 +35,9 @@ function validatePreferences(body: unknown): UserPreferences | null {
     return null;
   }
 
-  const minIncome = String(b.minIncome || 'any');
-  const validIncomes = ['any', '30k', '50k', '75k', '100k', '150k', '200k'];
-  if (!validIncomes.includes(minIncome)) {
+  const incomeMin = Number(b.incomeMin) || 0;
+  const incomeMax = Number(b.incomeMax) || 250000;
+  if (isNaN(incomeMin) || isNaN(incomeMax) || incomeMin > incomeMax) {
     return null;
   }
 
@@ -53,7 +53,8 @@ function validatePreferences(body: unknown): UserPreferences | null {
     ageMax,
     heightMin,
     heightMax,
-    minIncome,
+    incomeMin,
+    incomeMax,
     ethnicities,
     city,
     singleOnly,
