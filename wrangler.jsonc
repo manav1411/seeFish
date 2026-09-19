@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "seefish",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-19",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    "COMMUNITY_RECIPROCITY_ENABLED": "false"
+  },
+  "triggers": { "crons": ["17 3 * * *"] }
+}
