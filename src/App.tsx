@@ -7,7 +7,7 @@ import AboutResults from './components/AboutResults';
 import AnimatedCount from './components/AnimatedCount';
 import { BACKGROUNDS, CITIES, SOURCES, calculate, calculateMutualInterest, distributions } from './model';
 import { DEFAULT_PREFERENCES, type CityId, type Preferences, type Profile } from './model/types';
-import { recordRevealEvent } from './lib/api';
+import { recordPageView, recordRevealEvent } from './lib/api';
 import { matchesManav } from './model/intro';
 
 type Stage = 'preferences' | 'profile' | 'methodology';
@@ -25,6 +25,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [profile, setProfile] = useState<Profile>(() => blankProfile(DEFAULT_PREFERENCES.gender, DEFAULT_PREFERENCES.city));
   const [profileGenderTouched, setProfileGenderTouched] = useState(false);
+  useEffect(() => { void recordPageView(); }, []);
   useEffect(() => {
     const header = document.querySelector<HTMLElement>('.app-header');
     if (!header) return;
@@ -66,7 +67,8 @@ export default function App() {
         <ul>{estimate.assumptions.map((a, i) => <li key={i}>{a}</li>)}</ul>
         <p>{estimate.rangeMeaning}</p>
         <p>Background means reported ancestry, not a complete description of ethnicity. “Not set” means no ancestry was selected; it does not mean a person has no background. Aboriginal ancestry is not Indigenous status. Historical sex categories do not fully capture gender identity.</p>
-        <p>The About you figure starts with your filtered type pool and applies a reciprocal demographic fit to the details you enter. Same-gender selections use pooled ABS age rates for gay/lesbian and bisexual identity as an orientation proxy. The central scenario’s 0.35 baseline and other preference coefficients are my assumptions guided by studies, not measured attraction probabilities. The sensitivity range shows model variation, not a confidence interval. Your details stay on your device.</p>
+        <p>The About you figure starts with your filtered type pool and applies a reciprocal demographic fit to the details you enter. Same-gender selections use pooled ABS age rates for gay/lesbian and bisexual identity as an orientation proxy. The central scenario’s 0.35 baseline and other preference coefficients are my assumptions guided by studies, not measured attraction probabilities. The sensitivity range shows model variation, not a confidence interval. Your About you details stay on your device.</p>
+        <p>Basic usage analytics are retained for up to 90 days, including page visits, a random browser identifier, IP address, approximate network location, device/browser information, and the type filters submitted when revealing a result. This information is used to understand and improve SeeFish and is not sold.</p>
         <div className="source-list">{SOURCES.map(source => <a href={source.url} target="_blank" rel="noreferrer" key={source.id}><span><strong>{source.title}</strong><small>{source.period}</small><p>{source.note}</p></span><ArrowUpRight size={19} /></a>)}</div>
         <p className="method-small">Independent project. Source: Australian Bureau of Statistics. Model {estimate.modelVersion}. Particles are scaled illustrations, not individual locations.</p>
       </div>

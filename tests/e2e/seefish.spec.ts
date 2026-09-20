@@ -304,3 +304,31 @@ test('keeps the brand header and page toggle sticky and accessible when scrollin
     await expect(page.getByRole('heading', { name: 'Who’s your type?' })).toBeVisible();
   }
 });
+
+test('protects the detailed admin dashboard behind login', async ({ page }) => {
+  let authenticated = false;
+  const analytics = {
+    generatedAt: new Date().toISOString(), days: 30,
+    summary: { page_views: 12, unique_visitors: 7, reveals: 5, reveal_visitors: 4, average_matches: 12670 },
+    daily: [{ day: '2026-09-20', page_views: 12, reveals: 5, unique_visitors: 7 }],
+    cities: [{ label: 'melbourne', count: 4 }], genders: [{ label: 'women', count: 3 }], backgrounds: [{ label: 'indian', count: 2 }],
+    visitors: [{ visitor_id: 'visitor_123456789', first_seen: 1789880000, last_seen: 1789889000, page_views: 3, reveals: 2, ip_addresses: '203.0.113.8', countries: 'AU' }],
+    activity: [{ event_type: 'reveal', occurred_at: 1789889000, visitor_id: 'visitor_123456789', session_id: 'session_123456789', ip_address: '203.0.113.8', user_agent: 'Test browser', referer: null, client_language: 'en-AU', client_timezone: 'Australia/Melbourne', viewport_width: 390, viewport_height: 844, cf_country: 'AU', cf_region: 'Victoria', cf_city: 'Melbourne', cf_colo: 'MEL', cf_asn: 64500, cf_as_organization: 'Test network', path: null, gender: 'women', city: 'melbourne', age_min: 25, age_max: 38, height_min: 165, height_max: 190, income_min: null, income_max: null, backgrounds_json: '["indian"]', estimated_matches: 12670, match_share: .0066 }],
+  };
+  await page.route('**/api/admin/**', async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/login')) { authenticated = true; return route.fulfill({ status: 200, contentType: 'application/json', body: '{"authenticated":true}' }); }
+    if (!authenticated) return route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Admin authentication required."}' });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(analytics) });
+  });
+  await page.goto('/admin');
+  await expect(page.getByRole('heading', { name: 'Welcome back.' })).toBeVisible();
+  await page.getByLabel('Password').fill('test-password');
+  await page.getByRole('button', { name: 'Open dashboard' }).click();
+  await expect(page.getByRole('heading', { name: 'Audience dashboard' })).toBeVisible();
+  await expect(page.getByText('12', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Detailed activity' })).toBeVisible();
+  await page.getByText('Reveal', { exact: true }).click();
+  await expect(page.getByText('203.0.113.8', { exact: true }).last()).toBeVisible();
+  await expect(page.getByText('Test network', { exact: false })).toBeVisible();
+});

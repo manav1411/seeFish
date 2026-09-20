@@ -8,5 +8,26 @@
     "binding": "ASSETS",
     "run_worker_first": ["/api/*"]
   },
-  "triggers": { "crons": ["17 3 * * *"] }
+  "triggers": { "crons": ["17 3 * * *"] },
+  "secrets": { "required": ["ADMIN_PASSWORD", "ADMIN_SESSION_SECRET"] },
+  "ratelimits": [
+    {
+      "name": "RATE_LIMITER",
+      "namespace_id": "20401",
+      "simple": { "limit": 60, "period": 60 }
+    },
+    {
+      "name": "ADMIN_RATE_LIMITER",
+      "namespace_id": "20402",
+      "simple": { "limit": 5, "period": 60 }
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "seefish-analytics",
+      "database_id": "d4788e7c-eb57-4f60-a13d-aaa94da8c903",
+      "migrations_dir": "migrations"
+    }
+  ]
 }

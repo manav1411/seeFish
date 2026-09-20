@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "check": "tsc --noEmit",
-    "db:local": "wrangler d1 migrations apply seefish-local --local --config wrangler.local.jsonc"
+    "db:local": "wrangler d1 migrations apply seefish-local --local --config wrangler.local.jsonc",
+    "db:events": "wrangler d1 execute seefish-analytics --remote --config wrangler.jsonc --command \"SELECT id, datetime(clicked_at, 'unixepoch') AS clicked_at_utc, gender, city, age_min, age_max, height_min, height_max, income_min, income_max, backgrounds_json, estimated_matches, eligible_population, match_share, model_version FROM reveal_events ORDER BY clicked_at DESC, id DESC LIMIT 100\"",
+    "db:insights": "wrangler d1 execute seefish-analytics --remote --config wrangler.jsonc --command \"SELECT date(clicked_at, 'unixepoch') AS day_utc, city, gender, COUNT(*) AS clicks, ROUND(AVG(estimated_matches)) AS average_matches FROM reveal_events GROUP BY day_utc, city, gender ORDER BY day_utc DESC, clicks DESC\""
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.3.0",
