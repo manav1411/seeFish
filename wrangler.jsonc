@@ -8,8 +8,5 @@
     "binding": "ASSETS",
     "run_worker_first": ["/api/*"]
   },
-  "vars": {
-    "COMMUNITY_RECIPROCITY_ENABLED": "false"
-  },
   "triggers": { "crons": ["17 3 * * *"] }
 }

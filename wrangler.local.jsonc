@@ -15,6 +15,5 @@
       "database_id": "local",
       "migrations_dir": "migrations"
     }
-  ],
-  "vars": { "COMMUNITY_RECIPROCITY_ENABLED": "false" }
+  ]
 }

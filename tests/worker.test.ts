@@ -86,51 +86,6 @@ describe('SeeFish Worker API', () => {
     expect(JSON.stringify([...db.seenBindings, ...db.rows.values()])).not.toContain(token);
   });
 
-  it('requires stage one before saving a reciprocal profile', async () => {
-    const profile = { gender: 'women', city: 'sydney', age: 30, height: 170, income: 78000, backgrounds: [] };
-    const response = await worker.fetch(post('/api/reciprocity', { profile, disclosureVersion: DISCLOSURE_VERSION, acknowledged: true }), { DB: db } as Env);
-    expect(response.status).toBe(409);
-  });
-
-  it('treats an income band crossing a threshold as unknown', async () => {
-    await worker.fetch(post('/api/submissions', { preferences: DEFAULT_PREFERENCES, disclosureVersion: DISCLOSURE_VERSION, acknowledged: true }), { DB: db } as Env);
-    for (let i = 0; i < 50; i++) db.rows.set(`respondent-${i}`, {
-      capability_hash: `respondent-${i}`,
-      preferences_json: JSON.stringify({ ...DEFAULT_PREFERENCES, gender: 'women', income: [60_000, 182_000] }),
-      profile_json: JSON.stringify({ gender: 'men', city: 'sydney', age: 30, height: 175, income: 78_000, backgrounds: [] }),
-      expires_at: Math.floor(Date.now() / 1000) + 3600,
-    });
-    const ownProfile = { gender: 'women', city: 'sydney', age: 30, height: 165, income: 52_000, backgrounds: [] };
-    const response = await worker.fetch(post('/api/reciprocity', { profile: ownProfile, disclosureVersion: DISCLOSURE_VERSION, acknowledged: true }), { DB: db, COMMUNITY_RECIPROCITY_ENABLED: 'true' } as Env);
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ resultMode: 'scenario', cohortSize: 0, acceptance: null, missingDimensions: expect.arrayContaining(['profile.income']) });
-  });
-
-  it('uses bounded Wilson uncertainty for an extreme community result', async () => {
-    await worker.fetch(post('/api/submissions', { preferences: DEFAULT_PREFERENCES, disclosureVersion: DISCLOSURE_VERSION, acknowledged: true }), { DB: db } as Env);
-    for (let i = 0; i < 50; i++) db.rows.set(`respondent-${i}`, {
-      capability_hash: `respondent-${i}`,
-      preferences_json: JSON.stringify({ ...DEFAULT_PREFERENCES, gender: 'women' }),
-      profile_json: JSON.stringify({ gender: 'men', city: 'sydney', age: 30, height: 175, income: 78_000, backgrounds: [] }),
-      expires_at: Math.floor(Date.now() / 1000) + 3600,
-    });
-    const ownProfile = { gender: 'women', city: 'sydney', age: 30, height: 165, income: 78_000, backgrounds: [] };
-    const response = await worker.fetch(post('/api/reciprocity', { profile: ownProfile, disclosureVersion: DISCLOSURE_VERSION, acknowledged: true }), { DB: db, COMMUNITY_RECIPROCITY_ENABLED: 'true' } as Env);
-    const result = await response.json() as { resultMode: string; acceptance: number; range: [number, number] };
-    expect(result.resultMode).toBe('community');
-    expect(result.acceptance).toBe(1);
-    expect(result.range[0]).toBeGreaterThan(0.9);
-    expect(result.range[0]).toBeLessThan(1);
-    expect(result.range[1]).toBe(1);
-  });
-
-  it('accepts only the profile income bands shown in the product', async () => {
-    const profile = { gender: 'women', city: 'sydney', age: 30, height: 170, income: 80_000, backgrounds: [] };
-    const response = await worker.fetch(post('/api/reciprocity', { profile, disclosureVersion: DISCLOSURE_VERSION, acknowledged: true }), { DB: db } as Env);
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: 'Invalid income band.' });
-  });
-
   it('deletes the contribution using the same capability', async () => {
     await worker.fetch(post('/api/submissions', { preferences: DEFAULT_PREFERENCES, disclosureVersion: DISCLOSURE_VERSION, acknowledged: true }), { DB: db } as Env);
     const request = new Request(`${origin}/api/contribution`, { method: 'DELETE', headers: { origin, authorization: `Bearer ${token}` } });

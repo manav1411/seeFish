@@ -1,5 +1,12 @@
 import rawModel from '../../data/abs-2021-model.json';
-import type { City, CityId, DistributionBin, Estimate, Gender, Insight, Preferences, Source } from './types';
+import type { City, CityId, DistributionBin, Estimate, Gender, Insight, MutualEstimate, Preferences, Profile, Source } from './types';
+import {
+  MUTUAL_ASSUMPTIONS,
+  MUTUAL_SCENARIOS,
+  MUTUAL_SOURCE_IDS,
+  orientationShareForAge,
+  type MutualScenario,
+} from './mutual-research';
 
 type Cell = { a: number; s: 'M' | 'F'; g: string; l: number | null; h: number | null; t: number; p: number; n: number };
 type Model = {
@@ -58,6 +65,69 @@ export const SOURCES: Source[] = [
     url: 'https://www.abs.gov.au/statistics/health/health-conditions-and-risks/national-health-survey/2022',
     period: '2022',
     note: 'Measured and imputed national height evidence. The browser curve uses disclosed distribution fallbacks because city-level distributions are unavailable.',
+  },
+  {
+    id: 'abs-lgbti-2022',
+    title: 'Estimates and characteristics of LGBTI populations, Australia',
+    url: 'https://www.abs.gov.au/statistics/people/people-and-communities/estimates-and-characteristics-lgbti-populations-australia/2022',
+    period: '2022',
+    note: 'National gay/lesbian and bisexual identity estimates, shown in pooled age bands. Identity is used as an orientation proxy, not availability or attraction.',
+  },
+  {
+    id: 'eastwick-2025',
+    title: 'Age preferences in blind dates',
+    url: 'https://doi.org/10.1073/pnas.2416984122',
+    period: '2025',
+    note: 'Around 4,500 US blind dates support a smooth, modest age-similarity assumption; the study does not supply this app’s combined filter probability.',
+  },
+  {
+    id: 'whyte-2021',
+    title: 'What matters in a partner: Australian survey',
+    url: 'https://doi.org/10.1371/journal.pone.0250151',
+    period: '2021',
+    note: 'Australian trait-importance ratings found income weakest among nine traits; importance is not a probability of acceptance.',
+  },
+  {
+    id: 'stulp-2013',
+    title: 'Height and partner choice',
+    url: 'https://doi.org/10.1371/journal.pone.0054186',
+    period: '2013',
+    note: 'UK couple data show a modest male-taller pattern. The scenario uses it only as a soft opposite-sex height assumption.',
+  },
+  {
+    id: 'valentova-2014',
+    title: 'Relative height preferences in gay men',
+    url: 'https://doi.org/10.1371/journal.pone.0086534',
+    period: '2014',
+    note: 'Gay men’s relative-height preferences differ from the heterosexual pattern, so the heterosexual rule is not transferred to same-sex scenarios.',
+  },
+  {
+    id: 'fisman-2008',
+    title: 'Racial preferences in speed dating',
+    url: 'https://business.columbia.edu/faculty/research/racial-preferences-dating-evidence-speed-dating-experiment',
+    period: '2008',
+    note: 'Speed-dating evidence supports a cautious same-background tendency, but not an Indian/English ranking for Australian users.',
+  },
+  {
+    id: 'prestage-2019',
+    title: 'Racial preferences among Australian gay men',
+    url: 'https://pubmed.ncbi.nlm.nih.gov/30478706/',
+    period: '2019',
+    note: 'Australian gay men’s preferences vary; no universal own-group effect or exact ethnic ranking is extrapolated here.',
+  },
+  {
+    id: 'whyte-torgler-2017',
+    title: 'Stated vs revealed preferences on Australian RSVP',
+    url: 'https://doi.org/10.1089/cyber.2016.0528',
+    period: '2017',
+    note: 'A study of 219,013 contact decisions on Australian dating site RSVP found differences between declared partner preferences and actual contact choices.',
+  },
+  {
+    id: 'whyte-2018',
+    title: 'Educational preferences across dating profiles',
+    url: 'https://doi.org/10.1177/0956797618771081',
+    period: '2018',
+    note: 'Analysis of 41,936 Australian dating profiles showed educational preferences vary with the dater’s own education, sex, and age.',
   },
 ];
 
@@ -256,6 +326,265 @@ export function calculate(preferences: Preferences): Estimate {
   };
 }
 
+type MutualFactor = { id: string; label: string; detail: string };
+type BackgroundOverlap = { midpoint: number; low: number; high: number };
+type WeightedTarget = { cell: Cell; weight: number };
+
+const clamp = (value: number, low = 0, high = 1) => Math.max(low, Math.min(high, value));
+const finiteOr = (value: number, fallback: number) => Number.isFinite(value) ? value : fallback;
+const dedupe = (values: string[]) => [...new Set(values.filter(Boolean))];
+
+const ancestryUnion = (city: CityId, selected: string[]): BackgroundOverlap => {
+  const rates = dedupe(selected)
+    .map(id => MODEL.ancestry[city]?.[id])
+    .filter((value): value is number => Number.isFinite(value));
+  if (!rates.length) return { midpoint: 0, low: 0, high: 0 };
+  const midpoint = 1 - rates.reduce((product, rate) => product * (1 - rate), 1);
+  return {
+    midpoint: clamp(midpoint),
+    low: clamp(Math.max(...rates)),
+    high: clamp(Math.min(1, rates.reduce((sum, rate) => sum + rate, 0))),
+  };
+};
+
+/**
+ * Estimates the chance that a target selected by ancestry has a background
+ * shared with the visitor. Exact selected-category matches are transparent;
+ * target-Any cases use local margins and expose their unknown overlap bounds.
+ */
+const sharedBackground = (city: CityId, target: string[], own: string[]): BackgroundOverlap => {
+  const targetIds = dedupe(target);
+  const ownIds = dedupe(own);
+  if (!ownIds.length || !targetIds.length) {
+    return ownIds.length ? ancestryUnion(city, ownIds) : { midpoint: 1, low: 1, high: 1 };
+  }
+  const targetUnion = ancestryUnion(city, targetIds);
+  const matchingIds = targetIds.filter(id => ownIds.includes(id));
+  if (!matchingIds.length) return { midpoint: 0, low: 0, high: 0 };
+  const matchingUnion = ancestryUnion(city, matchingIds);
+  // A target with one selected category and the same visitor category is a
+  // guaranteed match. With multiple target categories, only the matching
+  // portion of the selected union is shared; the Census does not publish the
+  // joint ancestry cells needed to be more exact.
+  if (matchingIds.length === targetIds.length) return { midpoint: 1, low: 1, high: 1 };
+  if (targetUnion.midpoint <= 0) return { midpoint: 0, low: 0, high: 0 };
+  const midpoint = clamp(matchingUnion.midpoint / targetUnion.midpoint);
+  const low = targetUnion.high > 0 ? clamp(matchingUnion.low / targetUnion.high) : 0;
+  const high = targetUnion.low > 0 ? clamp(matchingUnion.high / targetUnion.low) : 1;
+  return { midpoint, low: Math.min(low, midpoint), high: Math.max(high, midpoint) };
+};
+
+const targetRows = (preferences: Preferences, includeTargetAncestry = true): WeightedTarget[] => {
+  const sex = sexCode(preferences.gender);
+  const ancestryWeight = includeTargetAncestry && preferences.backgrounds.length
+    ? backgroundScenario(preferences.city, dedupe(preferences.backgrounds)).midpoint
+    : 1;
+  if (ancestryWeight <= 0) return [];
+  return MODEL.cells[preferences.city]
+    .filter(cell => cell.s === sex && cell.a >= preferences.age[0] && cell.a <= preferences.age[1])
+    .map(cell => ({
+      cell,
+      weight: cell.n * incomeProbability(preferences.income, cell)
+        * heightProbability(preferences.height, preferences.gender, cell.a) * ancestryWeight,
+    }))
+    .filter(row => row.weight > 0 && Number.isFinite(row.weight));
+};
+
+const sumWeights = (rows: WeightedTarget[]) => rows.reduce((sum, row) => sum + row.weight, 0);
+const weightedAverage = (rows: WeightedTarget[], value: (row: WeightedTarget) => number) => {
+  const total = sumWeights(rows);
+  return total > 0 ? rows.reduce((sum, row) => sum + row.weight * finiteOr(value(row), 0), 0) / total : 0;
+};
+
+const cityReach = (preferences: Preferences, profile: Profile, nationalRows: WeightedTarget[]): number => {
+  if (profile.city == null || profile.city === 'australia') return 1;
+  if (preferences.city !== 'australia') return profile.city === preferences.city ? 1 : 0.6;
+  const national = sumWeights(nationalRows);
+  if (national <= 0) return 1;
+  const local = sumWeights(targetRows({ ...preferences, city: profile.city }));
+  const localShare = clamp(local / national);
+  return clamp(0.6 + 0.4 * localShare);
+};
+
+const targetIncomeMidpoint = (cell: Cell, selectedRange: [number, number] | null): number | null => {
+  if (cell.l == null) return null;
+  const cellHigh = cell.h ?? 182_000;
+  const low = Math.max(cell.l, selectedRange?.[0] ?? cell.l);
+  const high = Math.min(cellHigh, selectedRange?.[1] ?? cellHigh);
+  if (high < low) return null;
+  return (low + high) / 2;
+};
+
+const incomeSimilarity = (cell: Cell, ownIncome: number | null, selectedRange: [number, number] | null): number => {
+  if (ownIncome == null || !Number.isFinite(ownIncome)) return 1;
+  const targetIncome = targetIncomeMidpoint(cell, selectedRange);
+  if (targetIncome == null) return 1;
+  const user = Math.max(0, ownIncome);
+  const target = Math.max(0, targetIncome);
+  // The $5k offset prevents the zero-income band from creating an infinite
+  // ratio. The result is bounded before the deliberately weak 10% modifier.
+  return clamp(Math.exp(-Math.abs(Math.log((target + 5_000) / (user + 5_000)))));
+};
+
+const targetHeightCache = new Map<string, Array<{ value: number; weight: number }>>();
+const targetHeightDistribution = (gender: Gender, age: number, range: [number, number] | null) => {
+  const key = `${gender}|${age}|${range ? `${range[0]}-${range[1]}` : 'any'}`;
+  const cached = targetHeightCache.get(key);
+  if (cached) return cached;
+  const lower = Math.max(120, Math.ceil(range?.[0] ?? 120));
+  const upper = Math.min(230, Math.floor(range?.[1] ?? 230));
+  const values: Array<{ value: number; weight: number }> = [];
+  let total = 0;
+  for (let value = lower; value <= upper; value += 1) {
+    const { mean, sd } = heightParameters(gender, age);
+    const weight = Math.max(0, normalCdf(value + 0.5, mean, sd) - normalCdf(value - 0.5, mean, sd));
+    if (weight > 0) {
+      values.push({ value, weight });
+      total += weight;
+    }
+  }
+  const result = total > 0 ? values.map(bin => ({ value: bin.value, weight: bin.weight / total })) : [];
+  if (targetHeightCache.size >= 512) targetHeightCache.clear();
+  targetHeightCache.set(key, result);
+  return result;
+};
+
+const heightSimilarity = (targetGender: Gender, profileGender: Gender | null, targetAge: number, targetRange: [number, number] | null, ownHeight: number | null, scenario: MutualScenario) => {
+  if (ownHeight == null || !Number.isFinite(ownHeight)) return 1;
+  const sameSex = profileGender == null || profileGender === targetGender;
+  const bins = targetHeightDistribution(targetGender, targetAge, targetRange);
+  if (!bins.length) return 1;
+  const expected = sameSex ? ownHeight : ownHeight + (targetGender === 'men' ? 7 : -7);
+  const similarity = bins.reduce((sum, bin) => sum + bin.weight * Math.exp(-0.5 * ((bin.value - expected) / 15) ** 2), 0);
+  return scenario.heightFloor + (1 - scenario.heightFloor) * clamp(similarity);
+};
+
+const ageSimilarity = (targetAge: number, ownAge: number | null, scenario: MutualScenario) => {
+  if (ownAge == null || !Number.isFinite(ownAge)) return 1;
+  const similarity = Math.exp(-0.5 * ((targetAge - ownAge) / 12) ** 2);
+  return scenario.ageFloor + (1 - scenario.ageFloor) * similarity;
+};
+
+const incomeFactor = (cell: Cell, ownIncome: number | null, selectedRange: [number, number] | null, scenario: MutualScenario) => {
+  if (ownIncome == null || !Number.isFinite(ownIncome) || cell.l == null) return 1;
+  return scenario.incomeFloor + (1 - scenario.incomeFloor) * incomeSimilarity(cell, ownIncome, selectedRange);
+};
+
+const backgroundFactor = (overlap: BackgroundOverlap, scenario: MutualScenario, reduceStrength: boolean) => {
+  const strength = reduceStrength ? scenario.backgroundStrength * 0.5 : scenario.backgroundStrength;
+  // The factor is 1 when the visitor leaves background unspecified, even in
+  // the reduced-strength same-sex scenario. The authored floor is 1-strength
+  // for each sensitivity case.
+  return clamp(1 - strength + strength * overlap.midpoint);
+};
+
+const factorDetail = (value: number, neutral: boolean, text: string) => neutral ? 'Neutral because this field is unspecified.' : `${text} (${Math.round(clamp(value) * 100)}% relative weight).`;
+
+/**
+ * Estimates an illustrative reciprocal-interest scenario inside the selected
+ * population pool. Every modifier is averaged over actual selected target
+ * cells, rather than applied as a hard pass/fail check to the final count.
+ */
+export function calculateMutualInterest(preferences: Preferences, profile: Profile): MutualEstimate {
+  const normalizedPreferences = { ...preferences, backgrounds: dedupe(preferences.backgrounds) };
+  const pool = calculate(normalizedPreferences).estimate;
+  const rows = targetRows(normalizedPreferences);
+  const total = sumWeights(rows);
+  const overlap = sharedBackground(normalizedPreferences.city, normalizedPreferences.backgrounds, profile.backgrounds);
+  const geography = cityReach(normalizedPreferences, profile, rows);
+  const sameSex = profile.gender != null && profile.gender === normalizedPreferences.gender;
+  const heightCache = new Map<string, number>();
+  const heightForAge = (age: number, scenario: MutualScenario) => {
+    const key = `${age}|${scenario.heightFloor}`;
+    const cached = heightCache.get(key);
+    if (cached != null) return cached;
+    const value = heightSimilarity(normalizedPreferences.gender, profile.gender, age, normalizedPreferences.height, profile.height, scenario);
+    heightCache.set(key, value);
+    return value;
+  };
+  const orientationShare = profile.gender == null
+    ? 1
+    : weightedAverage(rows, row => orientationShareForAge(row.cell.a, profile.gender, normalizedPreferences.gender));
+
+  const scenarioTotal = (scenario: MutualScenario) => rows.reduce((sum, row) => {
+    const orientation = orientationShareForAge(row.cell.a, profile.gender, normalizedPreferences.gender);
+    const age = ageSimilarity(row.cell.a, profile.age, scenario);
+    const height = heightForAge(row.cell.a, scenario);
+    const income = incomeFactor(row.cell, profile.income, normalizedPreferences.income, scenario);
+    const background = backgroundFactor(overlap, scenario, sameSex);
+    return sum + row.weight * scenario.baseline * orientation * age * height * income * background * geography;
+  }, 0);
+
+  const centralTotal = scenarioTotal(MUTUAL_SCENARIOS.central);
+  const lowTotal = scenarioTotal(MUTUAL_SCENARIOS.low);
+  const highTotal = scenarioTotal(MUTUAL_SCENARIOS.high);
+  const centralEstimate = Math.max(0, Math.min(pool, Math.round(centralTotal)));
+  const lowEstimate = Math.max(0, Math.min(pool, Math.round(lowTotal)));
+  const highEstimate = Math.max(0, Math.min(pool, Math.round(highTotal)));
+  const estimate = Number.isFinite(centralEstimate) ? centralEstimate : 0;
+  const fit = total > 0 ? clamp(centralTotal / total) : 0;
+  const ageFactor = weightedAverage(rows, row => ageSimilarity(row.cell.a, profile.age, MUTUAL_SCENARIOS.central));
+  const heightFactor = weightedAverage(rows, row => heightForAge(row.cell.a, MUTUAL_SCENARIOS.central));
+  const incomeFactorAverage = weightedAverage(rows, row => incomeFactor(row.cell, profile.income, normalizedPreferences.income, MUTUAL_SCENARIOS.central));
+  const backgroundFactorAverage = backgroundFactor(overlap, MUTUAL_SCENARIOS.central, sameSex);
+  const orientationNeutral = profile.gender == null;
+  const ageNeutral = profile.age == null;
+  const heightNeutral = profile.height == null;
+  const incomeNeutral = profile.income == null;
+  const backgroundNeutral = profile.backgrounds.length === 0;
+  const factors: MutualFactor[] = [
+    {
+      id: 'baseline',
+      label: 'Scenario baseline',
+      detail: '35% central authored reciprocity scenario; the low/high range varies this assumption.',
+    },
+    {
+      id: 'orientation',
+      label: 'Orientation fit',
+      detail: orientationNeutral ? 'Neutral because gender is unspecified.' : `${Math.round(orientationShare * 1000) / 10}% pooled age-band identity proxy for this target gender pairing.`,
+    },
+    {
+      id: 'age',
+      label: 'Age similarity',
+      detail: factorDetail(ageFactor, ageNeutral, 'Smooth 12-year target-age similarity'),
+    },
+    {
+      id: 'height',
+      label: 'Height similarity',
+      detail: factorDetail(heightFactor, heightNeutral, 'NHS age-conditioned height distribution'),
+    },
+    {
+      id: 'income',
+      label: 'Income similarity',
+      detail: factorDetail(incomeFactorAverage, incomeNeutral, 'Weak bounded income-band comparison'),
+    },
+    {
+      id: 'background',
+      label: 'Shared background',
+      detail: factorDetail(backgroundFactorAverage, backgroundNeutral, 'ABS ancestry-margin scenario'),
+    },
+    {
+      id: 'geography',
+      label: 'Reach by city',
+      detail: profile.city == null ? 'Neutral because city is unspecified.' : factorDetail(geography, false, 'Local reach and national city weighting'),
+    },
+  ];
+
+  return {
+    estimate,
+    pool,
+    denominator: pool,
+    share: pool > 0 ? clamp(estimate / pool) : 0,
+    fit: Number.isFinite(fit) ? fit : 0,
+    range: [Math.min(lowEstimate, estimate, highEstimate), Math.max(lowEstimate, estimate, highEstimate)],
+    orientationShare: Number.isFinite(orientationShare) ? clamp(orientationShare) : 0,
+    factors,
+    assumptions: [...MUTUAL_ASSUMPTIONS],
+    sourceIds: [...MUTUAL_SOURCE_IDS],
+    evidenceState: 'illustrative scenario',
+  };
+}
+
 export function distributions(preferences: Preferences, field: 'age' | 'height' | 'income'): DistributionBin[] {
   const background = backgroundScenario(preferences.city, preferences.backgrounds).midpoint;
   const sex = sexCode(preferences.gender);
@@ -291,4 +620,4 @@ export function formatCount(value: number): string {
   return `${(value / 1_000_000).toFixed(abs < 10_000_000 ? 1 : 0).replace('.0', '')}m`;
 }
 
-export type { City, CityId, DistributionBin, Estimate, Gender, Insight, Preferences, Source } from './types';
+export type { City, CityId, DistributionBin, Estimate, Gender, Insight, MutualEstimate, Preferences, Profile, Source } from './types';

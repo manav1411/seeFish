@@ -1,89 +1,96 @@
-import { useMemo, useState, useDeferredValue } from 'react';
-import { ArrowLeft, ArrowRight, ArrowUpRight, Check, ChevronDown, RotateCcw } from 'lucide-react';
+import { useMemo, useState, useDeferredValue, useEffect } from 'react';
+import { ArrowLeft, ArrowUpRight, ChevronDown, Instagram, RotateCcw } from 'lucide-react';
 import ParticleMap from './components/ParticleMap';
 import CompactRange from './components/CompactRange';
-import { BACKGROUNDS, CITIES, SOURCES, calculate, distributions, formatCount } from './model';
-import { DEFAULT_PREFERENCES, type CityId, type Estimate, type Preferences, type Profile, type ReciprocityResult } from './model/types';
-import { deleteContribution, getToken, recoverToken, submitPreferences, submitProfile } from './lib/api';
+import SingleValue from './components/SingleValue';
+import AboutResults from './components/AboutResults';
+import AnimatedCount from './components/AnimatedCount';
+import { BACKGROUNDS, CITIES, SOURCES, calculate, calculateMutualInterest, distributions } from './model';
+import { DEFAULT_PREFERENCES, type CityId, type Preferences, type Profile } from './model/types';
+import { submitPreferences } from './lib/api';
+import { matchesManav } from './model/intro';
 
-type Stage = 'preferences' | 'results' | 'profile' | 'overlap' | 'methodology';
-const shortBackground = (label: string) => label.includes('Aboriginal') ? 'Aboriginal ancestry' : label.replace(' ancestry', '');
+type Stage = 'preferences' | 'profile' | 'methodology';
+const shortBackground = (label: string) => label.includes('Aboriginal') ? 'Aboriginal' : label.replace(' ancestry', '');
 const cityName = (id: CityId) => CITIES.find(c => c.id === id)?.name || 'Australia';
-const emptyReciprocity: ReciprocityResult = { resultMode: 'scenario', cohortSize: 0, acceptance: null, range: null, missingDimensions: [], message: 'Not enough relevant responses yet. Try a scenario below.' };
+const oppositeGender = (gender: Preferences['gender']): Profile['gender'] => gender === 'men' ? 'women' : 'men';
+const blankProfile = (gender: Preferences['gender']): Profile => ({ gender: oppositeGender(gender), city: 'australia', age: null, height: null, income: null, backgrounds: [] });
 
 export default function App() {
   const [stage, setStage] = useState<Stage>('preferences');
   const [previousStage, setPreviousStage] = useState<Stage>('preferences');
-  const [preferences, setPreferences] = useState<Preferences>({ ...DEFAULT_PREFERENCES, city: 'australia' });
+  const [preferences, setPreferences] = useState<Preferences>({ ...DEFAULT_PREFERENCES });
   const deferredPreferences = useDeferredValue(preferences);
   const estimate = useMemo(() => calculate(deferredPreferences), [deferredPreferences]);
-  const [result, setResult] = useState<Estimate | null>(null);
-  const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState('');
-  const [profile, setProfile] = useState<Profile>({ gender: 'women', city: 'australia', age: null, height: null, income: null, backgrounds: [] });
-  const [reciprocity, setReciprocity] = useState<ReciprocityResult>(emptyReciprocity);
-  const [availableRate, setAvailableRate] = useState<number | null>(null);
-  const [overlapRate, setOverlapRate] = useState<number | null>(null);
-  const [methodTab, setMethodTab] = useState<'data' | 'estimates' | 'privacy'>('data');
-  const [recoveryKey, setRecoveryKey] = useState('');
+  const [profile, setProfile] = useState<Profile>(() => blankProfile(DEFAULT_PREFERENCES.gender));
+  const [profileGenderTouched, setProfileGenderTouched] = useState(false);
+  useEffect(() => {
+    const header = document.querySelector<HTMLElement>('.app-header');
+    if (!header) return;
+    const update = () => document.documentElement.style.setProperty('--header-height', `${header.offsetHeight}px`);
+    const obs = new ResizeObserver(update);
+    obs.observe(header);
+    update();
+    return () => obs.disconnect();
+  }, []);
+  useEffect(() => {
+    if (stage === 'profile') window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [stage]);
   const bins = useMemo(() => ({ age: distributions(deferredPreferences, 'age'), height: distributions(deferredPreferences, 'height'), income: distributions(deferredPreferences, 'income') }), [deferredPreferences]);
-  const displayEstimate = stage === 'preferences' ? estimate : result || estimate;
-  const currentStep = stage === 'preferences' ? 0 : stage === 'results' ? 1 : 2;
-  const change = (next: Partial<Preferences>) => { setPreferences(p => ({ ...p, ...next })); setResult(null); setSaved(false); setNotice(''); };
+  const ownBins = useMemo(() => {
+    const own: Preferences = { ...DEFAULT_PREFERENCES, gender: profile.gender ?? (preferences.gender === 'men' ? 'women' : 'men'), city: profile.city === 'australia' || profile.city === null ? preferences.city : profile.city, age: [18, 80] };
+    return { age: distributions(own, 'age'), height: distributions(own, 'height'), income: distributions(own, 'income') };
+  }, [preferences.gender, preferences.city, profile.gender, profile.city]);
+  const mutualEstimate = useMemo(() => calculateMutualInterest(deferredPreferences, profile), [deferredPreferences, profile]);
+  const change = (next: Partial<Preferences>) => { setPreferences(p => ({ ...p, ...next })); if (next.gender && !profileGenderTouched) setProfile(p => ({ ...p, gender: oppositeGender(next.gender!) })); };
   const method = () => { if (stage === 'methodology') setStage(previousStage); else { setPreviousStage(stage); setStage('methodology'); } };
-
   async function reveal() {
     if (busy) return;
-    setBusy(true); setNotice('');
-    const current = calculate(preferences); setResult(current);
-    try { const response = await submitPreferences(preferences); setResult(response.result); setSaved(response.saved); if (!response.saved) setNotice('Result ready. Preferences weren’t saved.'); }
-    catch { setNotice('Result ready. Preferences couldn’t be saved.'); setSaved(false); }
-    finally { setBusy(false); setStage('results'); setProfile(p => ({ ...p, city: preferences.city, gender: preferences.gender === 'men' ? 'women' : 'men' })); }
+    setBusy(true); setProfile(p => p.gender ? p : ({ ...p, gender: oppositeGender(preferences.gender) })); setStage('profile');
+    try { await submitPreferences(preferences); }
+    catch { /* silent */ }
+    finally { setBusy(false); }
   }
-  async function revealOverlap() {
-    if (busy) return;
-    setBusy(true); setNotice('');
-    try {
-      if (!saved) { const response = await submitPreferences(preferences); setSaved(response.saved); }
-      setReciprocity(await submitProfile(profile));
-    } catch { setReciprocity(emptyReciprocity); setNotice('Details weren’t saved. You can still explore a scenario.'); }
-    finally { setBusy(false); setStage('overlap'); }
-  }
-  const goToStep = (index: number) => { setNotice(''); if (index === 0) setStage('preferences'); else if (index === 1 && result) setStage('results'); else if (index === 2 && result) setStage('profile'); };
-  const backgroundButtons = (selected: string[], update: (ids: string[]) => void, emptyLabel = 'Any') => <div className="ancestry-chips"><button type="button" className={!selected.length ? 'selected' : ''} aria-pressed={!selected.length} onClick={() => update([])}>{emptyLabel}</button>{BACKGROUNDS.map(b => <button type="button" key={b.id} aria-pressed={selected.includes(b.id)} className={selected.includes(b.id) ? 'selected' : ''} onClick={() => update(selected.includes(b.id) ? selected.filter(x => x !== b.id) : [...selected, b.id])}>{shortBackground(b.label)}</button>)}</div>;
-
+  const backgroundButtons = (selected: string[], update: (ids: string[]) => void) => <div className="ancestry-chips">{BACKGROUNDS.map(b => <button type="button" key={b.id} aria-pressed={selected.includes(b.id)} className={selected.includes(b.id) ? 'selected' : ''} onClick={() => update(selected.includes(b.id) ? selected.filter(x => x !== b.id) : [...selected, b.id])}>{shortBackground(b.label)}</button>)}</div>;
   return <div className="app-shell">
-    <header className="app-header"><a className="brand" href="#" aria-label="SeeFish home" onClick={e => { e.preventDefault(); setStage('preferences'); }}><img src="/favicon.svg" width="40" height="32" alt="" /><span>seefish</span></a>
-      <nav className="step-nav" aria-label="Explorer steps">{['Your type', 'Your pool', 'About you'].map((label, i) => <button key={label} disabled={i > 0 && !result} className={currentStep === i && stage !== 'methodology' ? 'active' : ''} aria-current={currentStep === i && stage !== 'methodology' ? 'step' : undefined} onClick={() => goToStep(i)}><span>0{i + 1}</span>{label}{i < 2 && <ChevronDown size={11} />}</button>)}</nav>
-      <div className="header-links"><button className={stage === 'methodology' ? 'active' : ''} onClick={method}>Methodology</button><span>Made by <a href="https://manavdodia.com" target="_blank" rel="noreferrer">Manav <ArrowUpRight size={12} /></a></span></div>
+    <header className="app-header"><a className="brand" href="#" aria-label="SeeFish home" onClick={e => { e.preventDefault(); setStage('preferences'); }}><img src="/favicon.svg" width="40" height="32" alt="" /><span>SeeFish</span></a>
+      <nav className="step-nav" aria-label="Explorer pages">{(['preferences', 'profile'] as const).map((page, i) => <button key={page} className={stage === page ? 'active' : ''} aria-current={stage === page ? 'page' : undefined} onClick={() => setStage(page)}><span>0{i + 1}</span>{page === 'preferences' ? 'Your type' : 'About you'}</button>)}</nav>
+      <div className="header-links"><button className={stage === 'methodology' ? 'active' : ''} onClick={method}>Methodology</button><a className="author-button" href="https://manavdodia.com" target="_blank" rel="noreferrer"><span className="author-desktop">Made by Manav</span><span className="author-mobile">Manav</span> <ArrowUpRight size={12} /></a></div>
     </header>
-
-    {stage === 'methodology' ? <main className="methodology-page"><div className="methodology-title"><button className="back-button" onClick={() => setStage(previousStage)}><ArrowLeft size={17} /> Back to explorer</button><h1>Behind the numbers.</h1></div><div className="methodology-tabs">{(['data', 'estimates', 'privacy'] as const).map(tab => <button className={methodTab === tab ? 'active' : ''} key={tab} onClick={() => setMethodTab(tab)}>{tab === 'data' ? 'Sources' : tab === 'estimates' ? 'Estimates & limitations' : 'Your contribution'}</button>)}</div>
-      {methodTab === 'data' && <div className="method-content"><p>Australian Census counts from 2021, with height evidence from the 2022 National Health Survey. Ages 18–80. These are demographic estimates, not current dating profiles.</p><div className="source-list">{SOURCES.map(source => <a href={source.url} target="_blank" rel="noreferrer" key={source.id}><span><strong>{source.title}</strong><small>{source.period}</small><p>{source.note}</p></span><ArrowUpRight size={19} /></a>)}</div><p className="method-small">Independent project. Source: Australian Bureau of Statistics. Model {estimate.modelVersion}. Particles are scaled illustrations, not individual locations.</p></div>}
-      {methodTab === 'estimates' && <div className="method-content"><p>Every filter is evaluated against one population model. Age, income, and location use joint Census tables. Ancestry intersections and height distributions have wider uncertainty.</p><ul>{estimate.assumptions.map((a, i) => <li key={i}>{a}</li>)}</ul><p>{estimate.rangeMeaning}</p><p>Background means reported ancestry, not a complete description of ethnicity. Aboriginal ancestry is not Indigenous status. Historical sex categories do not fully capture gender identity.</p><p>Reciprocal results describe stated preference overlap, not attraction. With too few relevant responses, the sliders are explicit assumptions, not predictions.</p></div>}
-      {methodTab === 'privacy' && <div className="method-content"><p>Nothing is saved while you adjust filters. “See my pool” saves your preferences for aggregate research. Submitting your own details links them to those preferences. No names, accounts, or public profiles.</p><p>A random browser key lets you update or delete your contribution. Records are pseudonymous, expire after 12 months, and may be processed outside Australia by Cloudflare. Answers are not included in shared URLs or analytics.</p><div className="privacy-tools"><button className="outline-button" onClick={async () => { try { await deleteContribution(); setNotice('No contribution associated with this key remains.'); } catch (e) { setNotice(e instanceof Error ? e.message : 'Couldn’t delete. Please try again.'); } }}>Delete my contribution</button><button className="text-link" onClick={() => setRecoveryKey(getToken() || '')}>Show recovery key</button></div><label className="recovery-field">Recovery key<input type="text" value={recoveryKey} onChange={e => setRecoveryKey(e.target.value)} autoComplete="off" spellCheck={false} placeholder="Paste a key from another visit" /></label><button className="text-link" onClick={() => { try { recoverToken(recoveryKey); setNotice('Key restored. You can now delete that contribution.'); } catch (e) { setNotice(e instanceof Error ? e.message : 'Invalid key.'); } }}>Restore key <ArrowRight size={13} /></button>{notice && <p role="status">{notice}</p>}</div>}
-    </main> : <main className="app-main">
-      <section className={`control-pane pane-${stage}`} aria-label={stage === 'preferences' ? 'Dating preferences' : stage === 'profile' ? 'Your profile' : 'Your results'}>
-        {stage === 'preferences' && <><div className="pane-title"><h1>Who’s your type?</h1><button aria-label="Reset all preferences" className="reset-button" onClick={() => change({ ...DEFAULT_PREFERENCES, city: 'australia' })}><RotateCcw size={15} /></button></div>
-          <div className="two-controls"><fieldset><legend>Interested in</legend><div className="gender-switch">{(['men', 'women'] as const).map(gender => <button key={gender} className={preferences.gender === gender ? 'selected' : ''} aria-pressed={preferences.gender === gender} onClick={() => change({ gender })}>{gender === 'men' ? 'Men' : 'Women'}{preferences.gender === gender && <Check size={12} />}</button>)}</div></fieldset><label className="location-control">Location<div className="select-box"><select aria-label="Dating location" value={preferences.city} onChange={e => change({ city: e.target.value as CityId })}>{CITIES.map(c => <option key={c.id} value={c.id}>{c.id === 'australia' ? 'All Australia' : c.name}</option>)}</select><ChevronDown size={13} /></div></label></div>
+    {stage === 'methodology' ? <main className="methodology-page">
+      <div className="methodology-title"><h1>Behind the numbers.</h1></div>
+      <div className="method-content">
+        <p>Australian Census counts from 2021, with height evidence from the 2022 National Health Survey. Ages 18–80. These are demographic estimates, not current dating profiles.</p>
+        <p>Every filter is evaluated against one population model. Age, income, and location use joint Census tables. Ancestry intersections and height distributions have wider uncertainty.</p>
+        <ul>{estimate.assumptions.map((a, i) => <li key={i}>{a}</li>)}</ul>
+        <p>{estimate.rangeMeaning}</p>
+        <p>Background means reported ancestry, not a complete description of ethnicity. “Not set” means no ancestry was selected; it does not mean a person has no background. Aboriginal ancestry is not Indigenous status. Historical sex categories do not fully capture gender identity.</p>
+        <p>The About you figure starts with your filtered type pool and applies a reciprocal demographic fit to the details you enter. Same-gender selections use pooled ABS age rates for gay/lesbian and bisexual identity as an orientation proxy. The central scenario’s 0.35 baseline and other preference coefficients are my assumptions guided by studies, not measured attraction probabilities. The sensitivity range shows model variation, not a confidence interval. Your details stay on your device.</p>
+        <div className="source-list">{SOURCES.map(source => <a href={source.url} target="_blank" rel="noreferrer" key={source.id}><span><strong>{source.title}</strong><small>{source.period}</small><p>{source.note}</p></span><ArrowUpRight size={19} /></a>)}</div>
+        <p className="method-small">Independent project. Source: Australian Bureau of Statistics. Model {estimate.modelVersion}. Particles are scaled illustrations, not individual locations.</p>
+      </div>
+    </main> : <main className={`app-main ${stage === 'profile' ? 'about-layout' : ''}`}>
+      <section className={`control-pane pane-${stage}`} aria-label={stage === 'preferences' ? 'Dating preferences' : 'About you'}>
+        {stage === 'preferences' ? <><div className="pane-title"><h1>Who’s your type?</h1><button aria-label="Reset all preferences" className="reset-button" onClick={() => change({ ...DEFAULT_PREFERENCES })}><RotateCcw size={15} /></button></div>
+          <div className="two-controls"><fieldset><legend>Interested in</legend><div className="gender-switch">{(['men', 'women'] as const).map(gender => <button key={gender} className={preferences.gender === gender ? 'selected' : ''} aria-pressed={preferences.gender === gender} onClick={() => change({ gender })}>{gender === 'men' ? 'Men' : 'Women'}</button>)}</div></fieldset><label className="location-control">Location<div className="select-box"><select aria-label="Dating location" value={preferences.city} onChange={e => change({ city: e.target.value as CityId })}>{CITIES.map(c => <option key={c.id} value={c.id}>{c.id === 'australia' ? 'All Australia' : c.name}</option>)}</select><ChevronDown size={13} /></div></label></div>
           <CompactRange label="Age" min={18} max={80} value={preferences.age} bins={bins.age} onChange={age => change({ age })} unit="yrs" />
-          <CompactRange label="Height" min={140} max={210} value={preferences.height || [140, 210]} bins={bins.height} onChange={height => change({ height })} unit="cm" any={!preferences.height} onAny={() => change({ height: preferences.height ? null : [160, 190] })} />
+          <CompactRange label="Height" min={140} max={210} value={preferences.height || [140, 210]} bins={bins.height} onChange={height => change({ height })} unit="cm" imperialHeight any={!preferences.height} onAny={() => change({ height: preferences.height ? null : [160, 190] })} />
           <CompactRange label="Yearly income" min={0} max={182000} step={1000} value={preferences.income || [0, 182000]} bins={bins.income} onChange={income => change({ income })} money any={!preferences.income} onAny={() => change({ income: preferences.income ? null : [52000, 104000] })} />
-          <fieldset className="background-control"><legend>Cultural background <span>ancestry · select any</span></legend>{backgroundButtons(preferences.backgrounds, backgrounds => change({ backgrounds }))}</fieldset>
-          <div className="pane-bottom"><button className="action-button" onClick={reveal} disabled={busy}>{busy ? 'Calculating…' : 'See my pool'}<ArrowRight size={18} /></button><p className="consent-line">Submit to save preferences for aggregate research. No name or account.</p></div></>}
+          <fieldset className="background-control"><div className="background-heading"><legend>Cultural background</legend><button className={`any-button ${!preferences.backgrounds.length ? 'selected' : ''}`} type="button" aria-pressed={!preferences.backgrounds.length} onClick={() => change({ backgrounds: [] })}>Any</button></div>{backgroundButtons(preferences.backgrounds, backgrounds => change({ backgrounds }))}</fieldset>
 
-        {stage === 'results' && <><div className="pane-title"><h1>Your pool.</h1><button className="back-button" onClick={() => setStage('preferences')}><ArrowLeft size={14} /> Edit</button></div><div className="result-hero"><p>About</p><strong>{formatCount(displayEstimate.estimate)}</strong><span>people fit your preferences.</span><div className="range-note">Estimated range: {formatCount(displayEstimate.range[0])}–{formatCount(displayEstimate.range[1])}</div></div><div className="result-insights">{displayEstimate.insights.slice(0, 3).map((insight, i) => <div key={insight.id}><span>0{i + 1}</span><article><h2>{insight.title}</h2><p>{insight.body}</p></article></div>)}</div><div className="pane-bottom"><button className="action-button" onClick={() => { setNotice(''); setStage('profile'); }}>Would they be into me?<ArrowRight size={18} /></button><p className="consent-line">Explore the other side of your preferences.</p>{notice && <p className="notice" role="status">{notice}</p>}</div></>}
-
-        {stage === 'profile' && <form className="profile-form" onSubmit={e => { e.preventDefault(); void revealOverlap(); }}><div className="pane-title"><h1>Now, you.</h1><button type="button" className="back-button" onClick={() => setStage('results')}><ArrowLeft size={14} /> Your pool</button></div><div className="profile-fields"><label>Gender<select value={profile.gender} onChange={e => setProfile(p => ({ ...p, gender: e.target.value as Profile['gender'] }))}><option value="women">Woman</option><option value="men">Man</option></select></label><label>Age<input type="number" min={18} max={100} value={profile.age ?? ''} placeholder="Optional" onChange={e => setProfile(p => ({ ...p, age: e.target.value ? Number(e.target.value) : null }))} /></label><label>Location<select value={profile.city} onChange={e => setProfile(p => ({ ...p, city: e.target.value as CityId }))}>{CITIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>Height (cm)<input type="number" min={120} max={230} value={profile.height ?? ''} placeholder="Optional" onChange={e => setProfile(p => ({ ...p, height: e.target.value ? Number(e.target.value) : null }))} /></label><label className="full-width">Yearly income before tax<select value={profile.income ?? ''} onChange={e => setProfile(p => ({ ...p, income: e.target.value ? Number(e.target.value) : null }))}><option value="">Prefer not to say</option>{[0, 26000, 52000, 78000, 104000, 156000, 182000].map((v, i, a) => <option value={v} key={v}>{v === 182000 ? '$182k+' : `$${v / 1000}k – $${a[i + 1] / 1000}k`}</option>)}</select></label></div><fieldset className="background-control"><legend>Cultural background <span>optional</span></legend>{backgroundButtons(profile.backgrounds, backgrounds => setProfile(p => ({ ...p, backgrounds })), 'Not specified')}</fieldset><div className="pane-bottom"><button className="action-button" type="submit" disabled={busy}>{busy ? 'Calculating…' : 'See our overlap'}<ArrowRight size={18} /></button><p className="consent-line">Submit to save these details with your preferences for aggregate research.</p></div></form>}
-
-        {stage === 'overlap' && <><div className="pane-title"><h1>The other side.</h1><button className="back-button" onClick={() => setStage('profile')}><ArrowLeft size={14} /> Edit</button></div>{reciprocity.resultMode === 'community' && reciprocity.acceptance !== null ? <><div className="result-hero"><strong>{Math.round(reciprocity.acceptance * 100)}%</strong><span>of relevant respondents’ preferences include you.</span></div><p className="overlap-explanation">Based on {reciprocity.cohortSize} respondents. This describes stated preferences, not attraction or Australia as a whole.</p></> : <><div className="overlap-intro"><span className="result-label">NOT ENOUGH RESPONSES YET</span><h2>What if it went<br />both ways?</h2><p>Choose two assumptions to see a possible overlap. These aren’t measured probabilities.</p></div><Scenario label="Available to date" value={availableRate} onChange={setAvailableRate} /><Scenario label="Their preferences include you" value={overlapRate} onChange={setOverlapRate} /><div className="scenario-number"><strong>{availableRate === null || overlapRate === null ? '—' : formatCount(displayEstimate.estimate * availableRate / 100 * overlapRate / 100)}</strong><span>possible overlaps, under your assumptions</span></div></>}<div className="pane-bottom"><button className="action-button" onClick={() => setStage('preferences')}>Change my preferences<RotateCcw size={16} /></button>{notice && <p className="notice" role="status">{notice}</p>}</div></>}
+          <div className="pane-bottom desktop-cta"><button className="action-button" onClick={reveal} disabled={busy}>See how many are into you</button></div>
+        </> : <>
+          <div className="pane-title"><h1>A little about you.</h1><button className="reset-button" aria-label="Clear your details" onClick={() => { setProfile(blankProfile(preferences.gender)); setProfileGenderTouched(false); }}><RotateCcw size={15} /></button></div>
+          <div className="two-controls profile-basics"><fieldset><legend>I’m a</legend><div className="gender-switch">{(['women', 'men'] as const).map(gender => <button key={gender} aria-pressed={profile.gender === gender} className={profile.gender === gender ? 'selected' : ''} onClick={() => { setProfileGenderTouched(true); setProfile(p => ({ ...p, gender })); }}>{gender === 'women' ? 'Woman' : 'Man'}</button>)}</div></fieldset><label className="location-control">My city<div className="select-box"><select aria-label="Your city" value={profile.city ?? 'australia'} onChange={e => setProfile(p => ({ ...p, city: e.target.value as CityId }))}>{CITIES.map(c => <option key={c.id} value={c.id}>{c.id === 'australia' ? 'Search area' : c.name}</option>)}</select><ChevronDown size={13} /></div></label></div>
+          <SingleValue label="Your age" min={18} max={80} value={profile.age} bins={ownBins.age} suggested={29} unit="yrs" onChange={age => setProfile(p => ({ ...p, age }))} />
+          <SingleValue label="Your height" min={140} max={210} value={profile.height} bins={ownBins.height} suggested={170} unit="cm" imperialHeight onChange={height => setProfile(p => ({ ...p, height }))} />
+          <SingleValue label="Your yearly income" min={0} max={182000} step={1000} value={profile.income} bins={ownBins.income} suggested={75000} money onChange={income => setProfile(p => ({ ...p, income }))} />
+          <fieldset className="background-control own-background"><div className="background-heading"><legend>Your cultural background</legend><button className={`any-button ${!profile.backgrounds.length ? 'selected' : ''}`} type="button" aria-pressed={!profile.backgrounds.length} onClick={() => setProfile(p => ({ ...p, backgrounds: [] }))}>Not set</button></div>{backgroundButtons(profile.backgrounds, backgrounds => setProfile(p => ({ ...p, backgrounds })))}</fieldset>
+          {matchesManav(profile) && <div className="creator-greeting"><span>hi</span><a href="https://www.instagram.com/manav141/" target="_blank" rel="noreferrer" aria-label="Instagram @manav141"><Instagram size={14} /><span>@manav141</span></a></div>}
+        </>}
       </section>
-      <section className="visual-pane" aria-label="Interactive population map"><div className="visual-heading"><div><span className="map-location">{preferences.city === 'australia' ? 'Australia' : cityName(preferences.city)}</span><span className="map-region">{preferences.city === 'australia' ? 'Select a city to explore' : CITIES.find(c => c.id === preferences.city)?.label}</span></div>{preferences.city !== 'australia' && <button onClick={() => { change({ city: 'australia' }); if (stage !== 'preferences') setStage('preferences'); }}><ArrowLeft size={12} /> Australia</button>}</div><ParticleMap city={preferences.city} count={displayEstimate.estimate} baseline={displayEstimate.denominator} onCityChange={city => { change({ city }); setStage('preferences'); }} /><div className="visual-bottom"><div className="live-total"><strong>{formatCount(displayEstimate.estimate)}</strong><span>estimated matches</span></div><div className="map-data-note"><span>{(displayEstimate.share * 100).toFixed(1)}% of {preferences.gender} aged 18–80</span><span>2021 Census · modelled estimate</span><span>Demographic fit, not availability or attraction.</span></div></div></section>
+      {stage === 'profile' ? <AboutResults estimate={mutualEstimate} /> : <><section className="visual-pane" aria-label="Interactive population map"><div className="visual-heading"><div><span className="map-location">{cityName(preferences.city)}</span>{preferences.city === 'australia' && <span className="map-region">Select a city to explore</span>}</div>{preferences.city !== 'australia' && <button onClick={() => change({ city: 'australia' })}><ArrowLeft size={12} /> Australia</button>}</div><ParticleMap city={preferences.city} count={estimate.estimate} baseline={estimate.denominator} onCityChange={city => change({ city })} /><div className="visual-bottom"><div className="live-total"><strong><AnimatedCount value={estimate.estimate} /></strong><span>estimated matches</span></div></div></section><div className="mobile-map-cta"><button className="action-button" onClick={reveal} disabled={busy}>See how many are into you</button></div></>}
     </main>}
   </div>;
-}
-
-function Scenario({ label, value, onChange }: { label: string; value: number | null; onChange: (n: number) => void }) {
-  return <label className="scenario-control"><span>{label}<strong>{value === null ? 'Choose %' : `${value}%`}</strong></span><input aria-label={label} type="range" min={0} max={100} value={value ?? 0} onChange={e => onChange(Number(e.target.value))} /><div>{[10, 25, 50, 75].map(n => <button key={n} type="button" aria-pressed={value === n} onClick={e => { e.preventDefault(); onChange(n); }}>{n}%</button>)}</div></label>;
 }

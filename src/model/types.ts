@@ -9,8 +9,8 @@ export interface Preferences {
   backgrounds: string[];
 }
 export interface Profile {
-  gender: Gender;
-  city: CityId;
+  gender: Gender | null;
+  city: CityId | null;
   age: number | null;
   height: number | null;
   income: number | null;
@@ -30,15 +30,20 @@ export interface Estimate {
   modelVersion: string;
   insights: Insight[];
 }
+export interface MutualEstimate {
+  estimate: number;
+  pool: number;
+  denominator: number;
+  share: number;
+  fit: number;
+  range: [number, number];
+  orientationShare: number;
+  factors: Array<{ id: string; label: string; detail: string }>;
+  assumptions: string[];
+  sourceIds: string[];
+  evidenceState: 'illustrative scenario';
+}
 export interface DistributionBin { value: number; weight: number }
 export interface City { id: CityId; name: string; label: string; x: number; y: number }
-export interface ReciprocityResult {
-  resultMode: 'community' | 'scenario';
-  cohortSize: number;
-  acceptance: number | null;
-  range: [number, number] | null;
-  missingDimensions: string[];
-  message: string;
-}
 export const DISCLOSURE_VERSION = '2026-09-19-v1';
 export const DEFAULT_PREFERENCES: Preferences = { gender: 'men', city: 'australia', age: [25, 38], height: null, income: null, backgrounds: [] };

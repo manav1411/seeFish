@@ -2,13 +2,19 @@
 
 Project plan · 19 September 2026.
 
+## Latest update — 20 September 2026
+
+The current About you page supersedes the common-ground comparison windows below. It uses a large matching-pool count and a linear breakdown of residents → selected ages → full type → unmeasured mutual interest. The similar-age/height/income orb and combined similarity counts are removed. There is no reliable source for a calibrated reciprocal-interest count, so the final stage is explicitly unknown; relevant primary studies and practical local suggestions occupy two adjacent tabs. See `docs/dating-research.md` and `docs/activity-sources.md`.
+
+Own gender, age and ancestry are explicit optional inputs. Women aged 20–24 who select Indian background receive a prominent personal note with a user-initiated Instagram link to @manav141, independent of height/income and never added to population counts. Own details remain in memory. The map coastline only fades in below 2% of the reference pool; click ripples, currents and shimmer respect reduced motion.
+
 ## Implementation update — revised product direction
 
-The owner subsequently replaced the original editorial design direction with a compact, single-screen black-and-white explorer. This supersedes the hero, footer, explainer popups, optional collapsed filters, sharing cards, and saved scenarios below.
+The owner subsequently replaced the original editorial design direction with a compact, single-screen explorer. This supersedes the hero, footer, explainer popups, optional collapsed filters, sharing cards, and saved scenarios below.
 
-Implemented direction: all age/height/income/background filters visible on the left; a high-resolution Three.js particle Australia on the right; smooth city zoom, cursor displacement, and filter-driven particle thinning; consistent lower/upper income limits; clear Your type → Your pool → About you navigation. One Methodology page contains sources and contribution controls. The header links “Made by Manav” to manavdodia.com. The cute fish mark is shared by the logo and favicon.
+Implemented direction: the first release is a two-page journey. Your type keeps all age/height/income/background filters visible on the left; a high-resolution Three.js particle Australia sits on the right; city zoom, cursor displacement, and filter-driven particle thinning make the map reactive. About you uses three optional single-value sliders and shows demographic common ground. There is no separate pool page or reciprocal-interest estimate. One Methodology page contains sources and contribution controls. The header links “Made by Manav” to manavdodia.com. The minimal, featureless fish mark is shared by the logo and favicon. The palette is warm plum night with pearl, lilac, ice, and pale coral particles; low-count pools retain an outlined, magnified map view.
 
-The calculation, provenance, anonymous contribution capture, and reciprocal uncertainty requirements remain in scope. The current release uses the verified 2021 Census snapshot and NHS 2022 height means; it does not claim current population projections. Production contribution capture still requires the account-specific D1 binding and migration described in docs/deployment.md.
+The calculation, provenance, and anonymous preference capture remain in scope. The current release uses the verified 2021 Census snapshot and NHS 2022 height means; it does not claim current population projections. About you measurements stay in browser memory and are never sent to the Worker. Production contribution capture still requires the account-specific D1 binding and migration described in docs/deployment.md.
 
 The original plan follows for modelling and infrastructure context.
 
@@ -41,14 +47,13 @@ Keep three quantities visibly distinct:
 | Result | Meaning | Evidence |
 | --- | --- | --- |
 | People who fit | Estimated resident adults satisfying selected demographic criteria | ABS tables plus documented statistical estimates |
-| Potentially available pool | People who fit, adjusted for a stated relationship/availability scenario | Household relationship statistics and any suitable survey evidence; assumptions where required |
-| Two-way preference overlap | People in the chosen pool whose stated criteria could also include the user | Relevant submitted profiles/preferences; research-supported priors or explicit scenarios when sparse |
+| Common ground | People in the chosen pool close to the user's age, height, or income | The same ABS population model, intersected with clearly stated comparison windows |
 
 Demographic fit does not establish that someone is single, seeking a relationship, heterosexual, reachable, attracted to the user, or likely to date them. Show these distinctions in the result labels, not only in a methodology page.
 
 The first result should say **“About [rounded estimate] people fit these demographics”**, with a model range, geography, population reference date, and evidence label. Avoid exact-looking counts such as 12,437 when the inputs only support an approximate answer.
 
-Launch can include the entire two-step journey even before reciprocal data accumulates. In that state, the second result is explicitly a scenario, with any assumption visible and editable. Never invent a precise reciprocal percentage to make the experience feel complete.
+The second page is descriptive common ground only. It does not infer availability, attraction, or reciprocal interest, and it does not require profile responses from other users.
 
 ## 3. Experience: an interactive landscape of possibilities
 
@@ -60,16 +65,11 @@ The signature visual is a **living pool of light**. A field of dots gently gathe
 
 ### Journey
 
-1. **Opening invitation:** “There are plenty of fish. What does your pool look like?” One primary action: “Explore my pool.” A short line establishes Australian data and estimated results.
-2. **Choose the basics:** who the user wants to meet, location, and age range. Use compact conversational cards, with a persistent summary and Back/Undo controls.
-3. **Shape the pool:** optional height, income, cultural background/ancestry, and relationship-status scenario. Present optional criteria as expandable cards rather than a wall of inputs. “No preference” is always explicit and easy to restore.
-4. **Explore before submitting:** sliders have distributions behind them. Selecting Sydney updates the income curve and other supported distributions. An estimated pool preview changes locally, without saving each interaction.
-5. **Submit:** “Reveal my pool.” Immediately adjacent disclosure explains that pressing it saves the selected preferences for aggregate research. Prevent accidental double submission; preserve edits if a request fails.
-6. **Reveal:** the visual settles around a rounded count and range, followed by up to three personalised insight cards. Keep the reveal brief; no artificial loading delay.
-7. **Invite reciprocity:** “Would your preferences overlap?” Supporting copy: “Add a little about yourself to explore the other side.” Explain that this measures stated criteria, not personal attraction.
-8. **About the user:** request only fields relevant to evaluating the other side: age, self-described gender, broad location, height, income band, background, and availability where applicable. Explain each field, allow skipping, and label resulting gaps.
-9. **Two-way reveal:** show people who fit, the estimated share whose preferences include the user, and the overlap. Distinguish community evidence, model estimates, and hypothetical scenarios.
-10. **Explore and share:** compare cities or save a local scenario. Sharing is explicit and defaults to a redacted result card without sensitive preferences or self-demographics.
+1. **Your type:** all filters are visible at once. The map previews the estimate while the user changes city, ranges, or ancestry.
+2. **Submit:** “Find common ground” saves preferences for aggregate research after the clear disclosure. A failed save never blocks the local result.
+3. **About you:** optional single-value age, height, and income sliders stay local to the browser. Skip and Clear states are explicit.
+4. **Common ground:** cards show the count and share within ±5 years, ±10 cm, and ±25% income (minimum $5,000), plus a combined descriptive count where available.
+5. **Methodology:** one header link explains source coverage, assumptions, limitations, and deletion of the anonymous preference contribution.
 
 ### Micro-interactions with a purpose
 
@@ -81,7 +81,7 @@ The signature visual is a **living pool of light**. A field of dots gently gathe
 | Undo | One action restores the prior state and visual, encouraging experimentation |
 | Result reveal | Brief count transition plus a softly drawn uncertainty band |
 | Evidence chip | Opens the specific source, date, assumptions, and fallback used for that result |
-| Reciprocal result | Two sets converge into an overlap graphic; visual areas must correspond to the quantities shown |
+| Common-ground reveal | A soft orbital graphic and three cards make each descriptive intersection feel tangible without implying attraction |
 
 Use roughly 150–300 ms transitions for controls. Respect reduced-motion settings, support keyboard and screen-reader use, provide visible focus and adequate contrast, and never rely on animation or colour to explain a number. Avoid announcing every slider tick to assistive technology.
 
@@ -188,36 +188,32 @@ For each filter’s distribution chart, condition on **all other active filters*
 - Sparse/unsupported combinations may produce a broad bound or “too little evidence for a useful estimate.” Never silently turn unknown into zero.
 - Show rounded central estimates only where informative; very small estimates should display a range such as “fewer than 100,” with no implication of exactly zero people.
 
-## 6. Reciprocal preferences: a separate evidence problem
+## 6. Common ground: a descriptive comparison
 
-ABS cannot supply a population-wide map of who wants to date whom. The reciprocal feature needs two linked items for each eligible contribution: **what a respondent wants** and **what they say about themselves**. Preferences alone, submitted in stage one, cannot identify which demographic cohort expressed them.
+ABS cannot supply a population-wide map of who wants to date whom, so SeeFish does not claim to estimate that. The About you page instead compares the user's supplied measurements with the selected pool using transparent product windows.
 
-Let `x` describe the user, `F` their criteria, and `q_i(x)` the probability that someone in demographic cell `i` would include `x` in their stated criteria:
+Let `F` describe the selected criteria and `W(x)` a comparison window around one local measurement:
 
 ```text
-N_overlap(F, x) = sum_i w_i × P(F satisfied AND available | cell i) × q_i(x)
+N_common(F, x) = count(F ∩ W(x))
 ```
 
-The factorisation assumes `q_i` is conditioned on the relevant matching/availability characteristics. Refine cells or integrate jointly where that assumption fails. Do not take a site-wide acceptance percentage and apply it to every selected pool.
+The calculation uses the same joint Census model as the main estimate. It is a demographic intersection, not an attraction probability.
 
-### Evidence ladder
+### Evidence and limits
 
-1. **Relevant paired submissions:** evaluate whether each eligible respondent fits the user’s filters and whether their declared criteria include the user. Exclude the user’s own record, duplicate contributions, demonstrations, and abuse-flagged rows.
-2. **Sparse cohorts:** partially pool estimates into broader age/location/background cohorts, with disclosed shrinkage and uncertainty. Avoid a combinatorial table where most demographic intersections contain one or two people.
-3. **Research prior:** use open studies only where they measure compatible acceptance thresholds or behaviour. For example, the Australian [2021 attraction study](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0250151) measures trait importance; importance ratings cannot be converted directly into an acceptance probability.
-4. **No suitable evidence:** provide an interactive scenario: “We don’t yet know this overlap. If [editable percentage] of your pool included your profile in their preferences, that would mean about [range].” The percentage is an assumption, not an inferred demographic statistic. Do not prefill a supposedly authoritative prior.
+1. Age and height windows can use the model directly; income similarity excludes the open-ended `$182,000+` band rather than pretending its lower edge is exact.
+2. Missing measurements show an unavailable card, not zero.
+3. The user's gender, city, and ancestry are retained locally for context and do not become unsupported desirability multipliers.
+4. Rounded estimates and model ranges remain visible. No site-wide acceptance percentage is applied to a selected pool.
 
-Present community results as **“Among relevant respondents…”**. Any extrapolation to Australian residents must be separately labelled and account for coverage and selection bias. Population reweighting can reduce known imbalances but does not make a voluntary website survey representative. Profile-completion bias also matters: people who finish stage two may differ from those who stop at stage one.
+The result label says **“demographic common ground”** and the methodology copy says that it does not measure availability or attraction.
 
 ### Initial release rules
 
-- Track unique eligible paired contributions, raw cohort size, effective sample size after weighting, data age, missing dimensions, and uncertainty.
-- Proposed starting gate: do not publish a cohort percentage below 50 eligible paired contributions or weighted effective sample size 30. Treat these as product safeguards to validate, not proof of statistical reliability.
-- Cap extreme weights; back off when coverage or interval width is poor. Large sample counts do not override severe selection bias.
-- Evaluate all relevant criteria jointly. A missing user field is unknown, not “no preference” on the respondent’s behalf.
-- Prefer structured bands for self-data. When a band straddles another person’s threshold, return bounded/modelled inclusion rather than inventing an exact value.
-- Publish no fine-grained “acceptance by ethnicity” leaderboard. Show only relevant, sufficiently supported personalised overlap, with appropriate context.
-- At launch, invite users to help improve the evidence without promising how quickly a cohort will become reliable.
+- Keep the three comparison windows fixed and visible in the interface.
+- Store only the submitted preferences; About you measurements never leave the browser.
+- Never label common ground as interest, availability, or compatibility.
 
 ## 7. Submission capture and privacy
 
@@ -272,8 +268,8 @@ flowchart LR
 | Component | Responsibility |
 | --- | --- |
 | Browser | Local interaction state, conditional charts, preview calculations, accessible experience |
-| Worker API | Validate requests, return canonical versioned calculations, record disclosed submissions, serve reciprocal aggregates |
-| D1 | Contributions, consent/disclosure metadata, profile linkage, deletion capabilities, private aggregates |
+| Worker API | Validate requests, return canonical versioned calculations, record disclosed preference submissions |
+| D1 | Contributions, consent/disclosure metadata, deletion capabilities |
 | R2 | Source snapshots, manifests, compact public model artifacts, validation reports |
 | Offline pipeline | Download, harmonise, fit, validate, and version models; Python is suitable for this work |
 | Scheduled job | Check source freshness and rebuild contribution aggregates; heavy fitting remains offline/CI |
@@ -288,10 +284,9 @@ Cloudflare documents repository-triggered builds in [Workers Builds](https://dev
 | `GET /api/model-manifest` | Current model/data versions, references, geography definitions, evidence coverage |
 | `POST /api/calculate` | Stateless estimate for normalised criteria; no research contribution is created |
 | `POST /api/submissions` | Explicit submit action: validate disclosure acknowledgement, idempotently store/update preferences, return result and private capability |
-| `POST /api/reciprocity` | Accept self-profile with separate acknowledgement, link/update contribution, return overlap evidence or scenario state |
 | `DELETE /api/contribution` | Verify secret capability, remove linked rows, schedule aggregate recomputation |
 
-Shared calculation responses include `estimate`, `range`, `rangeMeaning`, `denominator`, `geography`, `referencePeriods`, `evidenceState`, `assumptions`, `sourceIds`, `modelVersion`, and `insights`. Reciprocal responses also include `resultMode` (`community`, `modelled`, or `scenario`), cohort support, effective sample size, and dimensions not assessed. Invalid/missing fields receive structured errors.
+Shared calculation responses include `estimate`, `range`, `rangeMeaning`, `denominator`, `geography`, `referencePeriods`, `evidenceState`, `assumptions`, `sourceIds`, `modelVersion`, and `insights`. Invalid/missing fields receive structured errors.
 
 Use idempotency keys and transactions for saves. A save failure must not claim the contribution was recorded; still allow the user to see their locally calculated result with an accurate status. Never retry by creating duplicate records. If a client uses an old model version, return an explicit refresh/version state.
 
@@ -314,16 +309,16 @@ Indicative effort is 5–8 weeks for one experienced developer, including data i
 | 1. Interaction prototype — 4–6 days | Visual direction, complete two-step flow, pool animation, distribution controls, result/uncertainty cards | Mobile and desktop walkthrough with clearly labelled fixture data; keyboard/reduced-motion path works |
 | 2. Population model — 7–10 days | Source ingestion, geographic harmonisation, calibrated joint model, uncertainty variants, model artifacts, calculation API | Benchmark comparisons and mathematical invariants pass; no unexplained hardcoded demographic multipliers |
 | 3. Live explorer and collection — 5–7 days | Real-data UI, disclosure and idempotent capture, D1 schema, deletion flow, personalised insights | Complete first-stage flow on a Workers preview with no sensitive payloads in logs |
-| 4. Reciprocal experience — 5–7 days | Self-profile step, paired contribution evaluation, sparse-data states, scenario explorer, aggregate job | Correct two-way conditioning; launch with zero submissions works honestly; duplicate/self-record exclusions verified |
-| 5. Beta and launch — 4–6 days | Accessibility/performance work, browser testing, source/methodology pages, privacy review, operational checks | Acceptance checks pass; fresh users understand both result meanings and data capture; deployment and rollback demonstrated |
+| 4. About you and common ground — 2–4 days | Local single-value sliders, descriptive intersection cards, sparse/unknown states | No profile payload leaves the browser; thresholds and unsupported income tail are explicit |
+| 5. Beta and launch — 4–6 days | Accessibility/performance work, browser testing, source/methodology pages, privacy review, operational checks | Acceptance checks pass; fresh users understand demographic fit versus common ground and data capture |
 
 Research-access applications, custom ABS tables, broader orientation coverage, and radius search are later work, not hidden dependencies for this schedule.
 
 ### Launch scope
 
-Ship geography, desired partner gender within the initial scope, age, personal income, height, and ancestry/background with coverage-aware fallbacks. Ship availability as a separately labelled scenario/proxy. Include the full reciprocal flow with community/model/scenario states. Include conditional distributions, three strong insight templates, source drawers, one city comparison, and a redacted share card.
+Ship geography, desired partner gender within the initial scope, age, personal income, height, and ancestry/background with coverage-aware fallbacks. Include local common-ground comparisons, conditional distributions, three strong insight templates, source drawers, and one city comparison.
 
-Defer education, smoking, children, religion, relationship intentions, commute-radius matching, accounts, and richer demographic modelling until the core is validated. Each additional filter requires both a data-coverage assessment and reciprocal-field support where relevant.
+Defer education, smoking, children, religion, relationship intentions, commute-radius matching, accounts, and richer demographic modelling until the core is validated. Each additional filter requires a data-coverage assessment and an accessible local comparison story.
 
 ## 10. Validation and success measures
 
@@ -332,32 +327,32 @@ Defer education, smoking, children, religion, relationship intentions, commute-r
 - Unfiltered totals reconcile to their specified population benchmark; age 18+ is enforced consistently.
 - Tightening a hard filter never increases the result under the same model. “No preference” restores the appropriate total. Filter order never changes the result.
 - Selecting overlapping ancestry categories does not count anyone twice. Changing geography does not mix boundary editions or overlapping areas.
-- Counts remain between zero and the eligible population. Reciprocal overlap never exceeds the corresponding available matching pool.
+- Counts remain between zero and the eligible population. Common-ground counts never exceed the selected pool.
 - Validate against published cross-tabs not used for fitting where possible. Report error by cohort, not just a national average, and set tolerances before evaluating held-out results.
 - Check income boundaries, top coding, zero/negative/missing income, partial age bands, survey coverage, and all supported geographic mappings.
 - Test sensitivity to unobserved dependencies and demonstrate that unsupported precision does not appear in UI copy.
 - Cross-check browser previews and canonical server calculations against identical versioned fixtures.
 
-### Collection and reciprocal correctness
+### Collection and common-ground correctness
 
 - A slider change creates no contribution; a disclosed submit creates exactly one active contribution; retry/update does not inflate the sample.
-- Stage-two profile linkage requires the private capability and its own disclosure acknowledgement.
-- Reciprocity uses the selected target cohort, evaluates all assessed criteria jointly, handles missing fields, and excludes the submitting user.
-- Sparse cohort suppression, effective sample size, deduplication, expiry, deletion, and aggregate rebuild behaviour have meaningful tests.
+- About you measurements remain local and are never included in the preference contribution payload.
+- Common ground evaluates each supplied measurement against the selected target cohort, handles missing fields as unavailable, and excludes the open-ended top income band from false precision.
+- Deduplication, expiry, deletion, and contribution rebuild behaviour have meaningful tests.
 - Security checks cover injection, unauthorised profile attachment/deletion, shared-cache leakage, and inference through repeated cohort queries.
 
 ### Experience and operation
 
-- Playwright covers explore → submit → result → self-profile → reciprocal result, including failures and empty evidence.
+- Playwright covers explore → submit → About you → common-ground cards, including failures, empty evidence, and small pools.
 - Test keyboard navigation, screen-reader labels, contrast, reduced motion, mobile Safari, and common desktop browsers.
 - Targets to measure on an agreed mid-range mobile device/network: LCP under 2.5 seconds, INP under 200 ms, local visual feedback under 100 ms, and cached API calculations under 500 ms at p95.
 - Confirm preview isolation, source-outage fallback, model rollback, migrations, and log redaction in the Workers runtime.
 
 ### Product measures
 
-Measure completion of the first result, completion of the reciprocal step, voluntary scenario exploration, source-drawer use, and user comprehension in short usability sessions. Collect aggregate event names rather than demographic payloads. Also monitor paired-cohort coverage, freshness, failure rate, and model-range width.
+Measure completion of the first result, completion of About you, source-methodology use, and user comprehension in short usability sessions. Collect aggregate event names rather than demographic payloads. Also monitor freshness, failure rate, and model-range width.
 
-The experience succeeds when users find it engaging **and** can explain the difference between demographic fit, availability, and stated reciprocal preferences. A dramatic number that users misunderstand is a product failure.
+The experience succeeds when users find it engaging **and** can explain the difference between demographic fit and descriptive common ground. A dramatic number that users misunderstand is a product failure.
 
 ## 11. Remaining implementation decisions
 
@@ -366,7 +361,7 @@ All initial scope questions have been answered. Proceed using this plan; resolve
 1. Final name and brand treatment; SeeFish is provisional.
 2. Exact free-table coverage for ancestry × income and height distributions, including overlap data and licence terms.
 3. Existing Workers build configuration, domain, and binding setup.
-4. Evidence-based defaults for availability scenarios; no unsupported probability should become a hidden default.
+4. Final retention, disclosure wording, and uncertainty thresholds after privacy and statistical review.
 5. Final retention, consent wording, small-cohort rules, and uncertainty thresholds after privacy and statistical review.
 
-The first concrete implementation milestone is a working visual prototype backed by one verified city/age/sex/income slice, with the full two-step journey and honest placeholders for unverified estimates. Expand the model and evidence coverage before replacing those placeholders with production numbers.
+The first concrete implementation milestone is a working visual prototype backed by one verified city/age/sex/income slice, with the complete two-page journey and honest placeholders for unverified estimates. Expand the model and evidence coverage before replacing those placeholders with production numbers.

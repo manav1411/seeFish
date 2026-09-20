@@ -1,4 +1,4 @@
-import { DISCLOSURE_VERSION, type Preferences, type Profile, type Estimate, type ReciprocityResult } from '../model/types';
+import { DISCLOSURE_VERSION, type Preferences, type Estimate } from '../model/types';
 
 const KEY = 'seefish-contribution-key';
 let memoryToken: string | null = null;
@@ -27,5 +27,4 @@ async function request<T>(path: string, method: string, body?: unknown): Promise
 }
 
 export const submitPreferences = (preferences: Preferences) => request<{ result: Estimate; saved: boolean }>('/api/submissions', 'POST', { preferences, disclosureVersion: DISCLOSURE_VERSION, acknowledged: true });
-export const submitProfile = (profile: Profile) => request<ReciprocityResult>('/api/reciprocity', 'POST', { profile, disclosureVersion: DISCLOSURE_VERSION, acknowledged: true });
 export async function deleteContribution() { if (!getToken()) throw new Error('No contribution key in this browser. Restore your key first.'); await request('/api/contribution', 'DELETE'); forgetToken(); }

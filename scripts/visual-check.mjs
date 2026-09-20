@@ -1,42 +1,28 @@
 import { chromium } from '@playwright/test';
-const browser = await chromium.launch({channel:'chrome',headless:true});
-const page = await browser.newPage({viewport:{width:1440,height:900},deviceScaleFactor:1});
-page.on('console', m => { if(m.type() === 'error') console.log('CONSOLE:',m.text()); });
-page.on('pageerror', e => console.log('PAGE ERROR:', e.message));
-await page.goto('http://127.0.0.1:5173');
-await page.waitForTimeout(1300);
-await page.screenshot({path:'/tmp/seefish-dark-desktop.png'});
-await page.getByLabel('Dating location').selectOption('sydney');
-await page.waitForTimeout(1400);
-await page.screenshot({path:'/tmp/seefish-dark-city.png'});
-await page.getByLabel('Dating location').selectOption('australia');
-await page.setViewportSize({width:390,height:844});
-await page.waitForTimeout(1300);
-await page.screenshot({path:'/tmp/seefish-dark-mobile.png'});
-await page.setViewportSize({width:375,height:667});
-await page.waitForTimeout(300);
-await page.screenshot({path:'/tmp/seefish-dark-small.png'});
-console.log(await page.locator('.control-pane, .visual-pane, .pane-bottom, .background-control').evaluateAll(els => els.map(el => ({class:el.className,top:el.getBoundingClientRect().top,bottom:el.getBoundingClientRect().bottom}))));
 
-await page.setViewportSize({width:1366,height:768});
-await page.goto('http://127.0.0.1:8787');
-await page.getByRole('button',{name:'See my pool'}).click();
-await page.getByRole('heading',{name:'Your pool.'}).waitFor();
-console.log('LIVE SAVE NOTICE:', await page.locator('.notice').allTextContents());
-await page.screenshot({path:'/tmp/seefish-dark-results.png'});
-await page.getByRole('button',{name:'Would they be into me?'}).click();
-await page.getByLabel('Age',{exact:true}).fill('29');
-await page.getByRole('button',{name:'See our overlap'}).click();
-await page.getByRole('heading',{name:'The other side.'}).waitFor();
-console.log('LIVE PROFILE NOTICE:', await page.locator('.notice').allTextContents());
-await page.screenshot({path:'/tmp/seefish-dark-overlap.png'});
-await page.getByRole('button',{name:'Methodology',exact:true}).click();
-await page.getByRole('button',{name:'Your contribution',exact:true}).click();
-await page.getByRole('button',{name:'Delete my contribution'}).click();
-console.log('LIVE DELETION:',await page.getByRole('status').textContent());
-await page.setViewportSize({width:375,height:667});
-await page.getByRole('button',{name:'Estimates & limitations'}).click();
-await page.screenshot({path:'/tmp/seefish-method-mobile.png'});
-console.log('METHOD BOTTOM:', await page.locator('.method-content').evaluate(el=>el.getBoundingClientRect().bottom));
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+const errors = [];
+page.on('pageerror', error => errors.push(error.message));
+await page.route('**/api/submissions', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ saved: true }) }));
+
+for (const [name, width, height] of [['desktop', 1440, 900], ['mobile', 390, 844], ['small', 320, 568]]) {
+  await page.setViewportSize({ width, height });
+  await page.goto('http://127.0.0.1:5173');
+  await page.waitForTimeout(1000);
+  await page.screenshot({ path: `/tmp/seefish-${name}-type.png`, fullPage: true });
+  await page.getByRole('button', { name: 'About you' }).click();
+  await page.getByRole('button', { name: 'Man', exact: true }).click();
+  await page.getByRole('slider', { name: 'Your age' }).fill('31');
+  await page.getByRole('slider', { name: 'Your height' }).fill('178');
+  await page.waitForTimeout(550);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: `/tmp/seefish-${name}-about.png`, fullPage: true });
+  console.log(name, await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight })));
+}
+await page.getByRole('button', { name: 'Methodology', exact: true }).click();
+await page.getByRole('button', { name: 'Dating research', exact: true }).click();
+await page.screenshot({ path: '/tmp/seefish-mobile-research.png', fullPage: true });
+console.log('Page errors:', errors);
 await browser.close();
-
+if (errors.length) process.exitCode = 1;
