@@ -4,7 +4,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
-await page.route('**/api/submissions', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ saved: true }) }));
+await page.route('**/api/reveal-events', route => route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ saved: true }) }));
 
 for (const [name, width, height] of [['desktop', 1440, 900], ['mobile', 390, 844], ['small', 320, 568]]) {
   await page.setViewportSize({ width, height });

@@ -12,7 +12,7 @@ const estimate = {
 };
 
 async function mockSubmission(page: Page, status = 200) {
-  await page.route('**/api/submissions', route => route.fulfill({ status, contentType: 'application/json', body: status === 200 ? JSON.stringify({ result: estimate, saved: true }) : 'Unavailable' }));
+  await page.route('**/api/reveal-events', route => route.fulfill({ status, contentType: 'application/json', body: status === 200 ? JSON.stringify({ saved: true }) : 'Unavailable' }));
 }
 
 test('keeps desktop contained and gives mobile filters room to scroll without horizontal overflow', async ({ page }) => {
@@ -205,7 +205,7 @@ test('shows the subtle creator hello only for an explicit matching profile', asy
 
 test('keeps profile details local and mobile results reachable by scrolling', async ({ page }) => {
   let submissions = 0;
-  await page.route('**/api/submissions', route => { submissions += 1; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: estimate, saved: true }) }); });
+  await page.route('**/api/reveal-events', route => { submissions += 1; return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ saved: true }) }); });
   for (const size of [{ width: 390, height: 844 }, { width: 375, height: 667 }]) {
     submissions = 0;
     const submissionsBeforeVisit = submissions;

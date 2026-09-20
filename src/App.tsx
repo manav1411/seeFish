@@ -7,7 +7,7 @@ import AboutResults from './components/AboutResults';
 import AnimatedCount from './components/AnimatedCount';
 import { BACKGROUNDS, CITIES, SOURCES, calculate, calculateMutualInterest, distributions } from './model';
 import { DEFAULT_PREFERENCES, type CityId, type Preferences, type Profile } from './model/types';
-import { submitPreferences } from './lib/api';
+import { recordRevealEvent } from './lib/api';
 import { matchesManav } from './model/intro';
 
 type Stage = 'preferences' | 'profile' | 'methodology';
@@ -48,7 +48,7 @@ export default function App() {
   async function reveal() {
     if (busy) return;
     setBusy(true); setProfile(p => ({ ...p, city: preferences.city, gender: p.gender || oppositeGender(preferences.gender) })); setStage('profile');
-    try { await submitPreferences(preferences); }
+    try { await recordRevealEvent(preferences); }
     catch { /* silent */ }
     finally { setBusy(false); }
   }

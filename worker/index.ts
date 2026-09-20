@@ -1,5 +1,5 @@
 import { BACKGROUNDS, calculate, MODEL_VERSION, SOURCES } from '../src/model/index';
-import { DISCLOSURE_VERSION, type Estimate, type Preferences } from '../src/model/types';
+import type { Estimate, Preferences } from '../src/model/types';
 
 interface D1Result<T = unknown> { results?: T[]; success: boolean }
 interface D1Statement {
@@ -23,7 +23,6 @@ const localLimits = new Map<string, { count: number; expires: number }>();
 const cities = new Set(['australia', 'sydney', 'melbourne', 'brisbane', 'perth', 'adelaide', 'canberra', 'hobart', 'darwin']);
 const genders = new Set(['men', 'women']);
 const backgroundIds = new Set<string>(BACKGROUNDS.map((background) => background.id));
-const PREFERENCES_SCHEMA_VERSION = 2;
 
 class ApiError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -72,10 +71,6 @@ function preferences(value: unknown): Preferences {
   }
   return { gender: value.gender as Preferences['gender'], city: value.city as Preferences['city'], age, height, income, backgrounds: backgrounds(value.backgrounds) };
 }
-function storedPreferences(value: unknown): Preferences {
-  if (isObject(value) && value.schemaVersion === PREFERENCES_SCHEMA_VERSION && 'preferences' in value) return preferences(value.preferences);
-  return preferences(value);
-}
 async function body(request: Request): Promise<Record<string, unknown>> {
   if (!(request.headers.get('content-type') || '').toLowerCase().startsWith('application/json')) fail(415, 'Content-Type must be application/json.');
   const length = Number(request.headers.get('content-length') || 0);
@@ -98,17 +93,8 @@ function requireWriteOrigin(request: Request) {
   const origin = request.headers.get('origin');
   if (!origin || origin !== new URL(request.url).origin) fail(403, 'Cross-origin writes are not allowed.');
 }
-function capability(request: Request): string {
-  const match = /^Bearer ([A-Za-z0-9_-]{43,128})$/.exec(request.headers.get('authorization') || '');
-  if (!match) fail(401, 'A valid contribution capability is required.');
-  return match[1];
-}
-async function hashCapability(secret: string): Promise<string> {
-  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret));
-  return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
 function requireDb(env: Env): D1Database {
-  if (!env.DB) fail(503, 'Contribution capture is currently unavailable.');
+  if (!env.DB) fail(503, 'Event capture is currently unavailable.');
   return env.DB;
 }
 async function rateLimit(request: Request, env: Env, key: string) {
@@ -128,10 +114,6 @@ async function rateLimit(request: Request, env: Env, key: string) {
   if (!entry || entry.expires <= now) { localLimits.set(clientKey, { count: 1, expires: now + 60_000 }); return; }
   if (++entry.count > 30) fail(429, 'Too many requests. Please try again later.');
 }
-function disclosure(data: Record<string, unknown>) {
-  if (data.acknowledged !== true || data.disclosureVersion !== DISCLOSURE_VERSION) fail(400, 'Current disclosure acknowledgement is required.');
-}
-
 async function api(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === 'GET' && url.pathname === '/api/model-manifest') return json({ modelVersion: MODEL_VERSION, sources: SOURCES });
@@ -142,22 +124,23 @@ async function api(request: Request, env: Env): Promise<Response> {
     return json({ result });
   }
   if (['POST', 'DELETE'].includes(request.method)) requireWriteOrigin(request);
-  if (request.method === 'POST' && url.pathname === '/api/submissions') {
-    await rateLimit(request, env, 'write'); const db = requireDb(env); const token = capability(request); const data = await body(request);
-    exactKeys(data, ['preferences', 'disclosureVersion', 'acknowledged']); disclosure(data);
-    const prefs = preferences(data.preferences); const result: Estimate = calculate(prefs); const hash = await hashCapability(token);
-    const saved = await db.prepare(`INSERT INTO contributions (capability_hash, preferences_json, disclosure_version, preferences_updated_at, expires_at)
-      VALUES (?, ?, ?, unixepoch(), unixepoch() + 31536000)
-      ON CONFLICT(capability_hash) DO UPDATE SET preferences_json=excluded.preferences_json, disclosure_version=excluded.disclosure_version,
-      preferences_updated_at=unixepoch(), expires_at=unixepoch() + 31536000`).bind(hash, JSON.stringify({ schemaVersion: PREFERENCES_SCHEMA_VERSION, preferences: prefs }), DISCLOSURE_VERSION).run();
-    if (!saved.success) fail(503, 'Contribution capture is currently unavailable.');
-    return json({ result, saved: true });
-  }
-  if (request.method === 'DELETE' && url.pathname === '/api/contribution') {
-    await rateLimit(request, env, 'write'); const db = requireDb(env); const hash = await hashCapability(capability(request));
-    const deleted = await db.prepare('DELETE FROM contributions WHERE capability_hash = ?').bind(hash).run();
-    if (!deleted.success) fail(503, 'Contribution capture is currently unavailable.');
-    return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
+  if (request.method === 'POST' && url.pathname === '/api/reveal-events') {
+    await rateLimit(request, env, 'reveal');
+    const db = requireDb(env);
+    const data = await body(request);
+    exactKeys(data, ['preferences']);
+    const prefs = preferences(data.preferences);
+    const result: Estimate = calculate(prefs);
+    const saved = await db.prepare(`INSERT INTO reveal_events
+      (gender, city, age_min, age_max, height_min, height_max, income_min, income_max, backgrounds_json,
+       estimated_matches, eligible_population, match_share, model_version)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      prefs.gender, prefs.city, prefs.age[0], prefs.age[1], prefs.height?.[0] ?? null, prefs.height?.[1] ?? null,
+      prefs.income?.[0] ?? null, prefs.income?.[1] ?? null, JSON.stringify(prefs.backgrounds),
+      result.estimate, result.denominator, result.share, result.modelVersion,
+    ).run();
+    if (!saved.success) fail(503, 'Event capture is currently unavailable.');
+    return json({ saved: true }, 201);
   }
   fail(404, 'Not found.');
 }
@@ -178,6 +161,9 @@ export default {
     return env.ASSETS.fetch(new Request(new URL('/index.html', url), request));
   },
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    if (env.DB) await env.DB.prepare('DELETE FROM contributions WHERE expires_at <= unixepoch()').run();
+    if (env.DB) {
+      await env.DB.prepare('DELETE FROM reveal_events WHERE expires_at <= unixepoch()').run();
+      await env.DB.prepare('DELETE FROM contributions WHERE expires_at <= unixepoch()').run();
+    }
   },
 };

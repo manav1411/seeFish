@@ -1,32 +1,76 @@
 # Deploying SeeFish
 
-The checked-in configuration can build and serve the static app and calculation API without credentials. Contribution endpoints deliberately return `503 Contribution capture is currently unavailable` until a D1 binding is configured; they never report a save when storage is absent.
+SeeFish records one anonymous `reveal_events` row whenever a visitor clicks **See how many are into you**. The row contains the selected type filters, the calculated estimate, the model version, and a server-generated UTC timestamp. It does not store an IP address, cookie, browser token, User-Agent, referrer, or the optional **About you** profile.
 
-## Run locally with D1
+The endpoint accepts only the `preferences` object, validates every field, requires a same-origin browser request, and is rate-limited. Events expire after 365 days via the daily Worker cron. Cloudflare may still process request metadata outside this application database, so review account logging and applicable privacy obligations before production use.
 
-The separate `wrangler.local.jsonc` uses Wrangler's local-only `database_id: "local"`; it is never used for production deployment. Build the static app, apply the migration to the local database, then start the Worker:
+## Run and inspect locally
+
+Build the app, apply both migrations, and start the Worker:
 
 ```sh
 npm run build
-npx wrangler d1 migrations apply seefish-local --local --config wrangler.local.jsonc
-npx wrangler dev --config wrangler.local.jsonc
+npm run db:local
+npm run dev:worker
 ```
 
-Open the URL printed by Wrangler so browser writes carry the matching `Origin`. Local D1 state lives in Wrangler's development state directory. Delete that local state only when you intentionally want a fresh synthetic database.
+Open the Worker URL (normally `http://localhost:8787`), choose filters, and click the CTA. Then inspect recent events:
 
-## Provision production infrastructure
+```sh
+npx wrangler d1 execute seefish-local --local --config wrangler.local.jsonc --command "SELECT id, datetime(clicked_at, 'unixepoch') AS clicked_at_utc, gender, city, age_min, age_max, height_min, height_max, income_min, income_max, backgrounds_json, estimated_matches, eligible_population, match_share, model_version FROM reveal_events ORDER BY clicked_at DESC LIMIT 100"
+```
 
-1. Run `npm run build` and `npx wrangler deploy` to deploy the stateless site first.
-2. Create a production database with `npx wrangler d1 create seefish-contributions`. Add the returned `database_id` under a `d1_databases` entry in `wrangler.jsonc` with `binding: "DB"` and `database_name: "seefish-contributions"`. No placeholder ID is committed because Wrangler rejects it.
-3. Apply the schema with `npx wrangler d1 migrations apply seefish-contributions --remote`.
-4. Create a Cloudflare Workers Rate Limiting binding named `RATE_LIMITER` in the dashboard or configuration for production. Without it, the Worker uses a clearly limited per-isolate, in-memory fallback; that fallback is useful for local development and is not adequate abuse protection for public capture.
+## Provision production D1
 
-The browser must generate at least 32 random bytes using `crypto.getRandomValues`, encode them as hexadecimal or unpadded base64url, retain the capability locally, and send it as `Authorization: Bearer <capability>`. The database stores only its SHA-256 hash. Losing the capability means the row can no longer be updated or deleted by that browser.
+1. Create the database:
 
-Writes require an `Origin` header exactly matching the request URL origin, the current disclosure version, and `acknowledged: true`. Do not proxy these endpoints through a different public origin without updating that design deliberately.
+   ```sh
+   npx wrangler d1 create seefish-analytics
+   ```
 
-The daily scheduled handler deletes expired row-level contributions after 365 days. Cloudflare backup retention and deletion propagation must be configured and documented against the actual account policy. D1's Oceania location hint may be selected when creating the database, but it is not an Australia-only data residency guarantee.
+2. Copy the returned `database_id` into `wrangler.jsonc`:
 
-Use separate D1 databases for preview and production. Populate preview only with synthetic contributions. The Worker does not log raw request bodies, preference values, profiles, or capabilities; platform-level logging and analytics should be reviewed before production.
+   ```jsonc
+   "d1_databases": [
+     {
+       "binding": "DB",
+       "database_name": "seefish-analytics",
+       "database_id": "PASTE_THE_RETURNED_ID_HERE",
+       "migrations_dir": "migrations"
+     }
+   ]
+   ```
 
-Operational readiness requires the D1 binding and migrated schema, the rate-limit binding, same-origin hosting, a verified privacy/disclosure review, backup deletion policy, production monitoring based only on status/latency, and a successful create-update-delete smoke test. Static deployment alone is intentionally not described as capture-ready. Preference capture remains aggregate research; profiles are not sent to or stored by the Worker for reciprocal or community estimates. Existing profile columns in an already migrated D1 database may remain unused for compatibility.
+3. Apply the migrations and deploy:
+
+   ```sh
+   npx wrangler d1 migrations apply seefish-analytics --remote
+   npm run deploy
+   ```
+
+4. Configure a Workers Rate Limiting binding named `RATE_LIMITER`. Without one, the Worker uses a per-isolate in-memory fallback suitable for development, not robust public abuse protection.
+
+Use a separate database for preview deployments and synthetic data. Production writes will return `503` until the `DB` binding exists and migrations have been applied; this does not block the user-facing result.
+
+## View production events
+
+The Cloudflare dashboard exposes the same data under **Storage & Databases → D1 → seefish-analytics → Console**. From the CLI:
+
+```sh
+npx wrangler d1 execute seefish-analytics --remote --command "SELECT id, datetime(clicked_at, 'unixepoch') AS clicked_at_utc, gender, city, age_min, age_max, height_min, height_max, income_min, income_max, backgrounds_json, estimated_matches, eligible_population, match_share, model_version FROM reveal_events ORDER BY clicked_at DESC LIMIT 100"
+```
+
+For a quick summary by day, city, and selected gender:
+
+```sh
+npx wrangler d1 execute seefish-analytics --remote --command "SELECT date(clicked_at, 'unixepoch') AS day_utc, city, gender, COUNT(*) AS clicks, ROUND(AVG(estimated_matches)) AS average_matches FROM reveal_events GROUP BY day_utc, city, gender ORDER BY day_utc DESC, clicks DESC"
+```
+
+These commands follow Cloudflare's current [`d1 migrations apply`](https://developers.cloudflare.com/d1/wrangler-commands/#d1-migrations-apply) and [`d1 execute`](https://developers.cloudflare.com/d1/wrangler-commands/#d1-execute) interfaces.
+
+## Data lifecycle notes
+
+- `clicked_at` comes from D1's `unixepoch()` default, not the visitor's clock.
+- `expires_at` is set to one year after capture, and the scheduled Worker deletes expired rows daily.
+- The existing `contributions` table from migration `0001` is retained for safe upgrade compatibility but receives no new frontend data.
+- D1 backup retention and deletion propagation depend on the Cloudflare account configuration and should be reviewed separately.
