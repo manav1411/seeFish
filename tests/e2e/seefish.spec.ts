@@ -50,6 +50,8 @@ test('completes the two-page flow and updates the mutual estimate', async ({ pag
   await expect(page.getByRole('navigation', { name: 'Explorer pages' })).toBeVisible();
   await page.getByRole('button', { name: 'See how many are into you' }).click();
   await expect(page.getByRole('heading', { name: 'A little about you.' })).toBeVisible();
+  await expect(page.getByText('My city', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.mutual-kicker')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Skip Your age' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Skip your gender' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Woman', exact: true })).toHaveAttribute('aria-pressed', 'true');

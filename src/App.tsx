@@ -14,7 +14,7 @@ type Stage = 'preferences' | 'profile' | 'methodology';
 const shortBackground = (label: string) => label.includes('Aboriginal') ? 'Aboriginal' : label.replace(' ancestry', '');
 const cityName = (id: CityId) => CITIES.find(c => c.id === id)?.name || 'Australia';
 const oppositeGender = (gender: Preferences['gender']): Profile['gender'] => gender === 'men' ? 'women' : 'men';
-const blankProfile = (gender: Preferences['gender']): Profile => ({ gender: oppositeGender(gender), city: 'australia', age: null, height: null, income: null, backgrounds: [] });
+const blankProfile = (gender: Preferences['gender'], city: CityId = 'australia'): Profile => ({ gender: oppositeGender(gender), city, age: null, height: null, income: null, backgrounds: [] });
 
 export default function App() {
   const [stage, setStage] = useState<Stage>('preferences');
@@ -23,7 +23,7 @@ export default function App() {
   const deferredPreferences = useDeferredValue(preferences);
   const estimate = useMemo(() => calculate(deferredPreferences), [deferredPreferences]);
   const [busy, setBusy] = useState(false);
-  const [profile, setProfile] = useState<Profile>(() => blankProfile(DEFAULT_PREFERENCES.gender));
+  const [profile, setProfile] = useState<Profile>(() => blankProfile(DEFAULT_PREFERENCES.gender, DEFAULT_PREFERENCES.city));
   const [profileGenderTouched, setProfileGenderTouched] = useState(false);
   useEffect(() => {
     const header = document.querySelector<HTMLElement>('.app-header');
@@ -39,15 +39,15 @@ export default function App() {
   }, [stage]);
   const bins = useMemo(() => ({ age: distributions(deferredPreferences, 'age'), height: distributions(deferredPreferences, 'height'), income: distributions(deferredPreferences, 'income') }), [deferredPreferences]);
   const ownBins = useMemo(() => {
-    const own: Preferences = { ...DEFAULT_PREFERENCES, gender: profile.gender ?? (preferences.gender === 'men' ? 'women' : 'men'), city: profile.city === 'australia' || profile.city === null ? preferences.city : profile.city, age: [18, 80] };
+    const own: Preferences = { ...DEFAULT_PREFERENCES, gender: profile.gender ?? (preferences.gender === 'men' ? 'women' : 'men'), city: preferences.city, age: [18, 80] };
     return { age: distributions(own, 'age'), height: distributions(own, 'height'), income: distributions(own, 'income') };
-  }, [preferences.gender, preferences.city, profile.gender, profile.city]);
-  const mutualEstimate = useMemo(() => calculateMutualInterest(deferredPreferences, profile), [deferredPreferences, profile]);
+  }, [preferences.gender, preferences.city, profile.gender]);
+  const mutualEstimate = useMemo(() => calculateMutualInterest(deferredPreferences, { ...profile, city: deferredPreferences.city }), [deferredPreferences, profile]);
   const change = (next: Partial<Preferences>) => { setPreferences(p => ({ ...p, ...next })); if (next.gender && !profileGenderTouched) setProfile(p => ({ ...p, gender: oppositeGender(next.gender!) })); };
   const method = () => { if (stage === 'methodology') setStage(previousStage); else { setPreviousStage(stage); setStage('methodology'); } };
   async function reveal() {
     if (busy) return;
-    setBusy(true); setProfile(p => p.gender ? p : ({ ...p, gender: oppositeGender(preferences.gender) })); setStage('profile');
+    setBusy(true); setProfile(p => ({ ...p, city: preferences.city, gender: p.gender || oppositeGender(preferences.gender) })); setStage('profile');
     try { await submitPreferences(preferences); }
     catch { /* silent */ }
     finally { setBusy(false); }
@@ -81,8 +81,8 @@ export default function App() {
 
           <div className="pane-bottom desktop-cta"><button className="action-button" onClick={reveal} disabled={busy}>See how many are into you</button></div>
         </> : <>
-          <div className="pane-title"><h1>A little about you.</h1><button className="reset-button" aria-label="Clear your details" onClick={() => { setProfile(blankProfile(preferences.gender)); setProfileGenderTouched(false); }}><RotateCcw size={15} /></button></div>
-          <div className="two-controls profile-basics"><fieldset><legend>I’m a</legend><div className="gender-switch">{(['women', 'men'] as const).map(gender => <button key={gender} aria-pressed={profile.gender === gender} className={profile.gender === gender ? 'selected' : ''} onClick={() => { setProfileGenderTouched(true); setProfile(p => ({ ...p, gender })); }}>{gender === 'women' ? 'Woman' : 'Man'}</button>)}</div></fieldset><label className="location-control">My city<div className="select-box"><select aria-label="Your city" value={profile.city ?? 'australia'} onChange={e => setProfile(p => ({ ...p, city: e.target.value as CityId }))}>{CITIES.map(c => <option key={c.id} value={c.id}>{c.id === 'australia' ? 'Search area' : c.name}</option>)}</select><ChevronDown size={13} /></div></label></div>
+          <div className="pane-title"><h1>A little about you.</h1><button className="reset-button" aria-label="Clear your details" onClick={() => { setProfile(blankProfile(preferences.gender, preferences.city)); setProfileGenderTouched(false); }}><RotateCcw size={15} /></button></div>
+          <fieldset><legend>I’m a</legend><div className="gender-switch">{(['women', 'men'] as const).map(gender => <button key={gender} aria-pressed={profile.gender === gender} className={profile.gender === gender ? 'selected' : ''} onClick={() => { setProfileGenderTouched(true); setProfile(p => ({ ...p, gender })); }}>{gender === 'women' ? 'Woman' : 'Man'}</button>)}</div></fieldset>
           <SingleValue label="Your age" min={18} max={80} value={profile.age} bins={ownBins.age} suggested={29} unit="yrs" onChange={age => setProfile(p => ({ ...p, age }))} />
           <SingleValue label="Your height" min={140} max={210} value={profile.height} bins={ownBins.height} suggested={170} unit="cm" imperialHeight onChange={height => setProfile(p => ({ ...p, height }))} />
           <SingleValue label="Your yearly income" min={0} max={182000} step={1000} value={profile.income} bins={ownBins.income} suggested={75000} money onChange={income => setProfile(p => ({ ...p, income }))} />

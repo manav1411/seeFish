@@ -10,7 +10,6 @@ export default function AboutResults({ estimate }: Props) {
   return <section className="about-results" aria-label="About you note">
     <div className="about-results-inner">
       <div className="mutual-result">
-        <p className="mutual-kicker">About you</p>
         <div className="mutual-number" aria-label={`${estimate.estimate} estimated mutual interest out of ${estimate.denominator}`}>
           <strong><AnimatedCount value={estimate.estimate} /></strong>
           <span>/ <AnimatedCount value={estimate.denominator} /></span>
